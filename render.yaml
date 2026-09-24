@@ -1,0 +1,21 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Node version comes from .nvmrc.
+services:
+  - type: web
+    name: forgefit-supply-api
+    runtime: node
+    plan: free
+    # --include=dev: NODE_ENV=production makes `npm ci` skip devDependencies,
+    # and the build needs TypeScript.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

@@ -2,10 +2,33 @@
 //
 // Written in the same shape `supabase gen types typescript` produces, so it can be
 // swapped for generated output later. One deliberate difference: view columns are
-// non-null here (the generator marks every view column nullable) because
-// categories_with_counts derives them from NOT NULL columns.
+// non-null here (the generator marks every view column nullable) because the views
+// derive them from NOT NULL columns.
 
 type OrderStatus = "pending" | "paid" | "cancelled" | "fulfilled";
+
+type ProductListingRow = {
+  id: string;
+  name: string;
+  slug: string;
+  price_cents: number;
+  currency: string;
+  stock: number;
+  tag: string | null;
+  image_url: string | null;
+  description: string;
+  specs: string[];
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  brand_id: string;
+  brand_name: string;
+  brand_slug: string;
+};
 
 export type Database = {
   public: {
@@ -233,9 +256,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      product_listings: {
+        // search_document is a tsvector; PostgREST serialises it as text.
+        Row: ProductListingRow & { search_document: string };
+        Relationships: [];
+      };
     };
     Functions: {
-      [_ in never]: never;
+      product_search_query: {
+        Args: { p_query: string };
+        Returns: string | null;
+      };
+      search_products: {
+        Args: {
+          p_category?: string | null;
+          p_brands?: string[] | null;
+          p_query?: string | null;
+          p_sort?: string;
+          p_status?: string;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: (ProductListingRow & { total_count: number })[];
+      };
+      product_brand_facets: {
+        Args: {
+          p_category?: string | null;
+          p_query?: string | null;
+        };
+        Returns: {
+          id: string;
+          name: string;
+          slug: string;
+          product_count: number;
+        }[];
+      };
+      related_products: {
+        Args: { p_slug: string; p_limit?: number };
+        Returns: (ProductListingRow & { search_document: string })[];
+      };
     };
     Enums: {
       order_status: OrderStatus;

@@ -20,6 +20,14 @@ export const badRequest = (message = "Bad request", details?: unknown) =>
 export const validationError = (details: unknown) =>
   new HttpError(400, "validation_error", "Request validation failed", details);
 
+export const unauthorized = (message = "Authentication required") =>
+  new HttpError(401, "unauthorized", message);
+
+export const forbidden = (message = "You don't have access to this resource") =>
+  new HttpError(403, "forbidden", message);
+
 export const notFound = (message = "Resource not found") => new HttpError(404, "not_found", message);
+
+export const conflict = (message = "Resource already exists") => new HttpError(409, "conflict", message);
 
 export const internalError = () => new HttpError(500, "internal_error", "Something went wrong");

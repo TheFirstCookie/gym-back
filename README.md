@@ -22,7 +22,9 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 ├── render.yaml                      # Render Blueprint
 ├── supabase/
 │   ├── migrations/
-│   │   └── 0001_initial_schema.sql  # tables, indexes, view, triggers, RLS
+│   │   ├── 0001_initial_schema.sql        # tables, indexes, view, triggers, RLS
+│   │   ├── 0002_product_search.sql        # listing view + search/facets/related functions
+│   │   └── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -37,23 +39,33 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
     │   ├── error-handler.ts         # every error -> { error: { code, message, details? } }
     │   ├── not-found.ts
     │   ├── request-logger.ts
+    │   ├── require-admin.ts         # Supabase session + admin role check for /admin routes
     │   └── validate.ts              # zod validation of params / query / body
     ├── routes/
     │   └── index.ts                 # mounts module routers under /api/v1
     ├── types/
-    │   └── database.ts              # typed Supabase schema
+    │   ├── database.ts              # typed Supabase schema
+    │   └── express.d.ts             # res.locals typing
     ├── utils/
-    │   ├── http-error.ts            # HttpError + notFound(), badRequest(), ...
-    │   └── schemas.ts               # shared zod schemas (slug)
+    │   ├── http-error.ts            # HttpError + notFound(), conflict(), forbidden(), ...
+    │   ├── db-errors.ts             # constraint violations -> 400 / 409
+    │   ├── pagination.ts            # ?page & pageSize -> limit/offset + response meta
+    │   ├── schemas.ts               # shared zod schemas (slug, id, repeated query params)
+    │   └── slugify.ts
     └── modules/
-        ├── health/                  # GET /api/v1/health
-        └── categories/              # GET /api/v1/categories[/:slug]
-            ├── categories.routes.ts
-            ├── categories.controller.ts
-            ├── categories.service.ts
-            ├── categories.repository.ts
-            ├── categories.schema.ts
-            └── categories.types.ts
+        ├── health/                  # GET /health
+        ├── categories/              # GET /categories[/:slug]
+        │   ├── categories.routes.ts
+        │   ├── categories.controller.ts
+        │   ├── categories.service.ts
+        │   ├── categories.repository.ts
+        │   ├── categories.schema.ts
+        │   └── categories.types.ts
+        ├── brands/                  # GET /brands
+        ├── products/                # GET /products[/:slug[/related]]
+        ├── admin-session/           # GET /admin/session/me
+        ├── admin-products/          # /admin/products CRUD
+        └── admin-uploads/           # POST /admin/uploads/product-images
 ```
 
 ## Local setup
@@ -89,8 +101,8 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
-   - **SQL Editor** (simplest): paste and run `supabase/migrations/0001_initial_schema.sql`,
-     then `supabase/seed.sql`.
+   - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
+     (`0001`, `0002`, `0003`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -100,6 +112,28 @@ is missing or malformed, the server exits at startup with a list of what's wrong
      (`sb_secret_…`) or the legacy `service_role` key
 
 The seed is idempotent (it upserts by slug), so it's safe to run again.
+
+### Admin account
+
+The `/admin` routes accept only a signed-in Supabase user whose `app_metadata.role` is
+`admin`. Only the service role can write `app_metadata`, so users can't promote themselves.
+
+1. **Authentication > Users > Add user > Create new user**: enter your email and a password,
+   and tick **Auto Confirm User**.
+2. In the **SQL Editor**, grant the role (use the same email):
+
+   ```sql
+   update auth.users
+   set raw_app_meta_data = raw_app_meta_data || '{"role": "admin"}'::jsonb
+   where email = 'you@example.com';
+   ```
+
+3. Optional but recommended: **Authentication > Sign In / Providers**, turn off
+   **Allow new users to sign up**, so the admin login can't be used to create accounts.
+
+The role is checked on every request, so removing it takes effect immediately.
+
+### Row Level Security
 
 Row Level Security is enabled on every table. Categories, brands and active products have
 a public read-only policy, so the frontend can later read them (or subscribe through
@@ -141,11 +175,74 @@ errors always look like:
 
 Validation failures use `code: "validation_error"` and list the problems in `details`.
 
-| Method | Path                | Description                                                        |
-| ------ | ------------------- | ------------------------------------------------------------------ |
-| GET    | `/health`           | Status, uptime and a database ping (`db: "up"` or `"down"`)        |
-| GET    | `/categories`       | All categories in display order, with active product counts        |
-| GET    | `/categories/:slug` | One category; 404 if the slug doesn't exist                        |
+### Public
+
+| Method | Path                      | Description                                                  |
+| ------ | ------------------------- | ------------------------------------------------------------ |
+| GET    | `/health`                 | Status, uptime and a database ping (`db: "up"` or `"down"`)  |
+| GET    | `/categories`             | All categories in display order, with active product counts  |
+| GET    | `/categories/:slug`       | One category; 404 if the slug doesn't exist                  |
+| GET    | `/brands`                 | All brands, alphabetical                                     |
+| GET    | `/products`               | Active products: filters, search, sort, pages, brand facets  |
+| GET    | `/products/:slug`         | One active product with description and specs                |
+| GET    | `/products/:slug/related` | Up to `?limit=` (default 3) related products                 |
+
+`GET /products` query parameters, all optional:
+
+| Parameter  | Example               | Notes                                                         |
+| ---------- | --------------------- | ------------------------------------------------------------- |
+| `category` | `strength`            | Category slug                                                 |
+| `brand`    | `ironline`            | Brand slug; repeat it to combine brands                       |
+| `q`        | `kettle bell`         | Every word must match, as a prefix; name matches rank first   |
+| `sort`     | `price-asc`           | `featured` (default), `price-asc`, `price-desc`, `newest`     |
+| `page`     | `2`                   | Starts at 1                                                   |
+| `pageSize` | `24`                  | 1 to 100, default 24                                          |
+
+```json
+{
+  "data": [
+    {
+      "id": "…", "name": "Competition Kettlebell", "slug": "competition-kettlebell",
+      "priceCents": 8600, "currency": "usd", "stock": 24, "tag": "New", "image": "https://…",
+      "category": { "id": "…", "name": "Strength", "slug": "strength" },
+      "brand": { "id": "…", "name": "Kinetic Supply", "slug": "kinetic-supply" }
+    }
+  ],
+  "meta": {
+    "pagination": { "page": 1, "pageSize": 24, "total": 1, "totalPages": 1 },
+    "facets": { "brands": [{ "id": "…", "name": "Ironline", "slug": "ironline", "count": 0 }] }
+  }
+}
+```
+
+Prices are integer cents. Brand facet counts ignore the `brand` filter, so every brand chip
+can show how many products it would add.
+
+### Admin
+
+Send the Supabase session's access token as `Authorization: Bearer <token>`. A missing or
+expired token gets 401, a non-admin account 403.
+
+| Method | Path                             | Description                                                     |
+| ------ | -------------------------------- | --------------------------------------------------------------- |
+| GET    | `/admin/session/me`              | The signed-in admin (`id`, `email`)                             |
+| GET    | `/admin/products`                | Like `/products`, plus `status=active\|inactive\|all` (default `all`) |
+| GET    | `/admin/products/:id`            | One product, including hidden ones                              |
+| POST   | `/admin/products`                | Create; `slug` is generated from `name` when omitted            |
+| PATCH  | `/admin/products/:id`            | Update only the fields sent                                     |
+| DELETE | `/admin/products/:id`            | Hide the product (`isActive: false`); restore with PATCH        |
+| POST   | `/admin/uploads/product-images`  | Signed URL for uploading one photo straight to Storage          |
+
+Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `currency`,
+`stock`, `tag`, `imageUrl`, `description`, `specs` (array of strings), `sortOrder`,
+`isActive`. Unknown fields are rejected. A duplicate slug returns 409.
+
+"Deleting" hides a product instead of removing the row, so past orders keep their link to it.
+
+Image uploads: `POST /admin/uploads/product-images` with `{ "contentType": "image/webp" }`
+returns `path`, `token` and `publicUrl`. The browser uploads the file with Supabase's
+`storage.from("product-images").uploadToSignedUrl(path, token, file)`, then saves
+`publicUrl` as the product's `imageUrl`. The bucket accepts JPEG, PNG, WebP and AVIF up to 5 MB.
 
 Category shape (matches the frontend's `Category` type):
 
@@ -165,7 +262,8 @@ Each feature lives in `src/modules/<name>/` and is split by responsibility:
 | `*.routes.ts`     | Express router: paths, `validate(...)` middleware, controller methods           |
 | `*.controller.ts` | Reads the (already validated) request, calls the service, sends `{ data }`      |
 | `*.service.ts`    | Business rules; throws `HttpError`s such as `notFound()`                        |
-| `*.repository.ts` | The only layer that talks to Supabase; maps snake_case rows to camelCase DTOs   |
+| `*.repository.ts` | The only layer that talks to Supabase                                           |
+| `*.mapper.ts`     | snake_case rows -> camelCase API shapes (when there's more than a line of it)   |
 | `*.schema.ts`     | zod schemas for params, query and body                                          |
 | `*.types.ts`      | Row and DTO types                                                               |
 

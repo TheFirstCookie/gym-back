@@ -175,6 +175,7 @@ export type Database = {
           stripe_payment_intent_id: string | null;
           paid_at: string | null;
           cancelled_at: string | null;
+          fulfilled_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -191,6 +192,7 @@ export type Database = {
           stripe_payment_intent_id?: string | null;
           paid_at?: string | null;
           cancelled_at?: string | null;
+          fulfilled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -207,6 +209,7 @@ export type Database = {
           stripe_payment_intent_id?: string | null;
           paid_at?: string | null;
           cancelled_at?: string | null;
+          fulfilled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -335,6 +338,31 @@ export type Database = {
       release_stale_orders: {
         Args: { p_older_than?: string };
         Returns: number;
+      };
+      admin_search_orders: {
+        Args: {
+          p_status?: OrderStatus | null;
+          p_query?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: {
+          id: string;
+          status: OrderStatus;
+          customer_email: string | null;
+          customer_name: string | null;
+          currency: string;
+          total_cents: number;
+          item_count: number;
+          created_at: string;
+          paid_at: string | null;
+          fulfilled_at: string | null;
+          total_count: number;
+        }[];
+      };
+      order_status_counts: {
+        Args: Record<string, never>;
+        Returns: { status: OrderStatus; order_count: number }[];
       };
     };
     Enums: {

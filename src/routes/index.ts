@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAdmin } from "../middleware/require-admin.js";
+import { adminOrdersRouter } from "../modules/admin-orders/admin-orders.routes.js";
 import { adminProductsRouter } from "../modules/admin-products/admin-products.routes.js";
 import { adminSessionRouter } from "../modules/admin-session/admin-session.routes.js";
 import { adminUploadsRouter } from "../modules/admin-uploads/admin-uploads.routes.js";
@@ -15,6 +16,7 @@ const adminRouter = Router();
 adminRouter.use(requireAdmin);
 adminRouter.use("/session", adminSessionRouter);
 adminRouter.use("/products", adminProductsRouter);
+adminRouter.use("/orders", adminOrdersRouter);
 adminRouter.use("/uploads", adminUploadsRouter);
 
 /** Every versioned API route; mounted at /api/v1 in app.ts. */

@@ -25,7 +25,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   │   ├── 0001_initial_schema.sql        # tables, indexes, view, triggers, RLS
 │   │   ├── 0002_product_search.sql        # listing view + search/facets/related functions
 │   │   ├── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
-│   │   └── 0004_checkout.sql              # order columns + create/pay/cancel order functions
+│   │   ├── 0004_checkout.sql              # order columns + create/pay/cancel order functions
+│   │   └── 0005_admin_orders.sql          # shipped timestamp + admin order list/counts
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -68,6 +69,7 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
         ├── products/                # GET /products[/:slug[/related]]
         ├── admin-session/           # GET /admin/session/me
         ├── admin-products/          # /admin/products CRUD
+        ├── admin-orders/            # /admin/orders list, detail, mark shipped
         ├── admin-uploads/           # POST /admin/uploads/product-images
         └── checkout/                # Stripe Checkout sessions, order lookup, webhook
             ├── checkout.gateway.ts  # the only code that calls Stripe
@@ -111,7 +113,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0004`), then `supabase/seed.sql`.
+     (`0001` to `0005`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -301,12 +303,21 @@ expired token gets 401, a non-admin account 403.
 | PATCH  | `/admin/products/:id`            | Update only the fields sent                                     |
 | DELETE | `/admin/products/:id`            | Hide the product (`isActive: false`); restore with PATCH        |
 | POST   | `/admin/uploads/product-images`  | Signed URL for uploading one photo straight to Storage          |
+| GET    | `/admin/orders`                  | Newest first; `status=pending\|paid\|fulfilled\|cancelled\|all`, `q`, `page`, `pageSize` |
+| GET    | `/admin/orders/:id`              | One order: items, shipping address, Stripe references           |
+| PATCH  | `/admin/orders/:id`              | `{ "status": "fulfilled" }` marks a paid order shipped; `"paid"` undoes it |
 
 Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `currency`,
 `stock`, `tag`, `imageUrl`, `description`, `specs` (array of strings), `sortOrder`,
 `isActive`. Unknown fields are rejected. A duplicate slug returns 409.
 
 "Deleting" hides a product instead of removing the row, so past orders keep their link to it.
+
+Orders: `q` matches part of the customer's email or name, or of the order id. The list's
+`meta.counts` has the number of orders per status (plus `all`) for the whole shop. Only
+paid ↔ fulfilled can be changed by hand, since payment and cancellation come from Stripe;
+anything else returns 409 `invalid_status_transition`. Order detail includes
+`stripe.dashboardUrl`, a link to the payment in the Stripe dashboard.
 
 Image uploads: `POST /admin/uploads/product-images` with `{ "contentType": "image/webp" }`
 returns `path`, `token` and `publicUrl`. The browser uploads the file with Supabase's

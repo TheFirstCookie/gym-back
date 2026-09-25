@@ -1,0 +1,22 @@
+import { z } from "zod";
+import { paginationQuerySchema } from "../../utils/pagination.js";
+import { searchQuerySchema } from "../../utils/schemas.js";
+
+export const ORDER_STATUSES = ["pending", "paid", "fulfilled", "cancelled"] as const;
+
+export const adminOrderListQuerySchema = paginationQuerySchema.extend({
+  status: z.enum([...ORDER_STATUSES, "all"]).default("all"),
+  /** Part of the customer's email or name, or of the order id. */
+  q: searchQuerySchema,
+});
+
+/**
+ * The only status changes an admin makes by hand: ship a paid order, or undo that.
+ * Payment and cancellation are driven by Stripe (see the checkout module).
+ */
+export const updateOrderSchema = z.strictObject({
+  status: z.enum(["fulfilled", "paid"]),
+});
+
+export type AdminOrderListQuery = z.infer<typeof adminOrderListQuerySchema>;
+export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;

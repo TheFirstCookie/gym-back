@@ -13,3 +13,12 @@ export const stripe = env.STRIPE_SECRET_KEY
       appInfo: { name: "ForgeFit Supply API" },
     })
   : null;
+
+/**
+ * A payment's page in the Stripe dashboard. Test-mode keys (and sandboxes) open the test
+ * dashboard, where test payments live.
+ */
+export function stripeDashboardPaymentUrl(paymentIntentId: string): string {
+  const testMode = !env.STRIPE_SECRET_KEY || /^(sk|rk)_test_/.test(env.STRIPE_SECRET_KEY);
+  return `https://dashboard.stripe.com/${testMode ? "test/" : ""}payments/${encodeURIComponent(paymentIntentId)}`;
+}

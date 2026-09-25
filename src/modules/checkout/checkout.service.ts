@@ -79,6 +79,27 @@ export const checkoutService = {
     return (await checkoutRepository.findBySession(sessionId)) ?? order;
   },
 
+  /**
+   * The shopper came back from Stripe without paying: close their session and put the
+   * stock back now, instead of holding it until Stripe expires the session (30 minutes).
+   * If they did pay after all (another tab), the payment is recorded instead.
+   */
+  async abandonCheckout(sessionId: string): Promise<OrderSummary> {
+    const order = await checkoutRepository.findBySession(sessionId);
+    if (!order) throw notFound("Order not found");
+    if (order.status !== "pending") return order;
+
+    checkoutGateway.assertConfigured();
+    const session = await checkoutGateway.expireSession(sessionId);
+    if (isPaid(session)) {
+      await markPaid(session);
+    } else {
+      await checkoutRepository.cancelPending(order.id);
+    }
+
+    return (await checkoutRepository.findBySession(sessionId)) ?? order;
+  },
+
   /** Applies a verified Stripe webhook event. Safe to receive the same event twice. */
   async handleWebhookEvent(event: Stripe.Event): Promise<void> {
     switch (event.type) {

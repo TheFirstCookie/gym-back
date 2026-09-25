@@ -20,3 +20,10 @@ checkoutRouter.get(
   validate({ params: checkoutSessionParamsSchema }),
   checkoutController.getOrder,
 );
+
+// Called by the cart when Stripe's "back" link returns an unpaid shopper.
+checkoutRouter.post(
+  "/sessions/:sessionId/abandon",
+  validate({ params: checkoutSessionParamsSchema }),
+  checkoutController.abandon,
+);

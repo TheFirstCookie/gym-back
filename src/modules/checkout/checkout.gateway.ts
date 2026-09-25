@@ -87,6 +87,22 @@ export const checkoutGateway = {
     }
   },
 
+  /**
+   * Closes an open session so it can't be paid anymore. Returns the session as it is now:
+   * if it was already completed or expired, Stripe refuses and the current state is fetched.
+   */
+  async expireSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    const client = requireStripe();
+    try {
+      return await client.checkout.sessions.expire(sessionId);
+    } catch (error) {
+      if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        return checkoutGateway.retrieveSession(sessionId);
+      }
+      throw toGatewayError(error);
+    }
+  },
+
   async retrieveSession(sessionId: string): Promise<Stripe.Checkout.Session> {
     try {
       return await requireStripe().checkout.sessions.retrieve(sessionId);

@@ -161,8 +161,9 @@ How an order flows:
    `pending` order with prices copied from the catalog (the client never sends prices).
 2. The API creates a Checkout session for that order (valid 30 minutes) and returns its
    `url`; the storefront redirects there.
-3. Stripe sends the shopper back to `STOREFRONT_URL/checkout/success?session_id=…` (or to
-   `/cart?checkout=cancelled`).
+3. Stripe sends the shopper back to `STOREFRONT_URL/checkout/success?session_id=…`, or to
+   `/cart?checkout=cancelled`, where the storefront calls `…/abandon` so the stock is
+   released right away instead of when the session expires.
 4. Stripe calls the webhook:
    - `checkout.session.completed` / `async_payment_succeeded`: the order becomes `paid`,
      with the customer's email, name and shipping address.
@@ -278,6 +279,7 @@ can show how many products it would add.
 | ------ | ------------------------------ | ----------------------------------------------------------------- |
 | POST   | `/checkout/sessions`           | `{ "items": [{ "slug", "quantity" }] }` → `{ sessionId, url }` (201) |
 | GET    | `/checkout/sessions/:sessionId` | The order behind a session: status, items, totals, email         |
+| POST   | `/checkout/sessions/:sessionId/abandon` | Shopper left Stripe without paying: close the session, release stock |
 | POST   | `/checkout/webhook`            | Stripe only; the signature is verified against the raw body       |
 
 Creating a session is limited to 10 per minute per IP, since each one holds stock for up to

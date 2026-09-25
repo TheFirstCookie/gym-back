@@ -12,6 +12,10 @@ export const checkoutController = {
   async getOrder(req: Request<CheckoutSessionParams>, res: Response) {
     res.json({ data: await checkoutService.getOrderBySession(req.params.sessionId) });
   },
+
+  async abandon(req: Request<CheckoutSessionParams>, res: Response) {
+    res.json({ data: await checkoutService.abandonCheckout(req.params.sessionId) });
+  },
 };
 
 /**

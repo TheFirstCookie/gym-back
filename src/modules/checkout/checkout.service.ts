@@ -1,10 +1,14 @@
 import type Stripe from "stripe";
 import { logger } from "../../lib/logger.js";
 import { notFound } from "../../utils/http-error.js";
+import { orderEmailsService } from "../order-emails/order-emails.service.js";
 import { checkoutGateway } from "./checkout.gateway.js";
 import { isPaid, orderIdOf, toPaymentDetails } from "./checkout.mapper.js";
 import { checkoutRepository } from "./checkout.repository.js";
-import type { CartItem, CheckoutSession, OrderSummary } from "./checkout.types.js";
+import type { CartItem, CheckoutSession, OrderStatus, OrderSummary } from "./checkout.types.js";
+
+/** Statuses an order can be in once it has been paid for. */
+const PAID_STATUSES: OrderStatus[] = ["paid", "fulfilled", "refunded"];
 
 async function markPaid(session: Stripe.Checkout.Session): Promise<void> {
   const orderId = orderIdOf(session);
@@ -14,10 +18,27 @@ async function markPaid(session: Stripe.Checkout.Session): Promise<void> {
   }
 
   const status = await checkoutRepository.markPaid(toPaymentDetails(session, orderId));
-  if (status !== "paid") {
+  if (status === "paid") {
+    // Sends at most once per order, however many times this runs; never throws.
+    await orderEmailsService.sendOrderConfirmation(orderId);
+  } else if (!status || !PAID_STATUSES.includes(status)) {
     // e.g. the order was already released as stale; needs a human (refund or restock).
     logger.error("Payment received for an order that isn't payable", { orderId, status, sessionId: session.id });
   }
+}
+
+/** A charge refunded in full outside the admin panel (e.g. in the Stripe dashboard). */
+async function markRefunded(charge: Stripe.Charge): Promise<void> {
+  if (!charge.refunded) return; // Partial refunds keep the order as it is.
+
+  const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  if (!paymentIntentId) return;
+
+  const orderId = await checkoutRepository.findOrderIdByPaymentIntent(paymentIntentId);
+  if (!orderId) return;
+
+  // Stock stays as is: restocking is a separate admin decision (was the parcel returned?).
+  await checkoutRepository.markRefunded(orderId, charge.refunds?.data[0]?.id ?? null);
 }
 
 async function cancel(session: Stripe.Checkout.Session): Promise<void> {
@@ -100,6 +121,22 @@ export const checkoutService = {
     return (await checkoutRepository.findBySession(sessionId)) ?? order;
   },
 
+  /**
+   * Refunds a paid order in full through Stripe, then records it. `restock` puts the items
+   * back on the shelf. Callers check the order's status first (see admin-orders).
+   */
+  async refundOrder(orderId: string, paymentIntentId: string, restock: boolean): Promise<void> {
+    checkoutGateway.assertConfigured();
+    const refund = await checkoutGateway.refundPayment(paymentIntentId, orderId);
+    await checkoutRepository.markRefunded(orderId, refund?.id ?? null);
+    if (restock) await checkoutRepository.restockRefunded(orderId);
+  },
+
+  /** Puts a refunded order's items back in stock, once (e.g. when the parcel comes back). */
+  async restockRefundedOrder(orderId: string): Promise<boolean> {
+    return checkoutRepository.restockRefunded(orderId);
+  },
+
   /** Applies a verified Stripe webhook event. Safe to receive the same event twice. */
   async handleWebhookEvent(event: Stripe.Event): Promise<void> {
     switch (event.type) {
@@ -113,6 +150,9 @@ export const checkoutService = {
       case "checkout.session.expired":
       case "checkout.session.async_payment_failed":
         await cancel(event.data.object);
+        return;
+      case "charge.refunded":
+        await markRefunded(event.data.object);
         return;
       default:
         // Other events are acknowledged and ignored.

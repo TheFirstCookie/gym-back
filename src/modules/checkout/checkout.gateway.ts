@@ -103,6 +103,30 @@ export const checkoutGateway = {
     }
   },
 
+  /**
+   * Refunds a payment in full. Safe to call twice for the same order: the idempotency key
+   * makes Stripe return the first refund, and "already refunded" comes back as null.
+   */
+  async refundPayment(paymentIntentId: string, orderId: string): Promise<Stripe.Refund | null> {
+    const client = requireStripe();
+    try {
+      return await client.refunds.create(
+        {
+          payment_intent: paymentIntentId,
+          reason: "requested_by_customer",
+          metadata: { order_id: orderId },
+        },
+        { idempotencyKey: `refund-order-${orderId}` },
+      );
+    } catch (error) {
+      // Refunded earlier, e.g. straight from the Stripe dashboard.
+      if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "charge_already_refunded") {
+        return null;
+      }
+      throw toGatewayError(error);
+    }
+  },
+
   async retrieveSession(sessionId: string): Promise<Stripe.Checkout.Session> {
     try {
       return await requireStripe().checkout.sessions.retrieve(sessionId);

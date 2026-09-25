@@ -111,6 +111,33 @@ export const checkoutRepository = {
     return data;
   },
 
+  /**
+   * Idempotent; returns the status the order ended up in ('refunded', or whatever it was
+   * if it couldn't be refunded), or null when it doesn't exist.
+   */
+  async markRefunded(orderId: string, refundId: string | null): Promise<OrderStatus | null> {
+    const { data } = await supabase
+      .rpc("mark_order_refunded", { p_order_id: orderId, p_refund_id: refundId })
+      .throwOnError();
+    return data;
+  },
+
+  /** Puts a refunded order's items back in stock; true only for the call that did it. */
+  async restockRefunded(orderId: string): Promise<boolean> {
+    const { data } = await supabase.rpc("restock_refunded_order", { p_order_id: orderId }).throwOnError();
+    return data;
+  },
+
+  async findOrderIdByPaymentIntent(paymentIntentId: string): Promise<string | null> {
+    const { data } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("stripe_payment_intent_id", paymentIntentId)
+      .maybeSingle()
+      .throwOnError();
+    return data?.id ?? null;
+  },
+
   async releaseStaleOrders(): Promise<number> {
     const { data } = await supabase.rpc("release_stale_orders").throwOnError();
     return data;

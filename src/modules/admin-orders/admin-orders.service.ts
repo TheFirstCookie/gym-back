@@ -1,8 +1,9 @@
 import { HttpError, notFound } from "../../utils/http-error.js";
 import { toLimitOffset, toPagination } from "../../utils/pagination.js";
+import { checkoutService } from "../checkout/checkout.service.js";
 import { toAdminOrder, toAdminOrderListItem, toStatusCounts } from "./admin-orders.mapper.js";
 import { adminOrdersRepository } from "./admin-orders.repository.js";
-import type { AdminOrderListQuery, UpdateOrderInput } from "./admin-orders.schema.js";
+import type { AdminOrderListQuery, RefundOrderInput, UpdateOrderInput } from "./admin-orders.schema.js";
 import type { AdminOrder, AdminOrderListResponse, OrderStatus } from "./admin-orders.types.js";
 
 type ManualStatus = UpdateOrderInput["status"];
@@ -63,5 +64,40 @@ export const adminOrdersService = {
     }
 
     return order;
+  },
+
+  /**
+   * Refunds a paid (or shipped) order in full through Stripe. Idempotent: refunding a
+   * refunded order just returns it, and Stripe never refunds the same order twice.
+   */
+  async refund(id: string, { restock }: RefundOrderInput): Promise<AdminOrder> {
+    const order = await adminOrdersService.getById(id);
+    if (order.status === "refunded") {
+      return restock ? adminOrdersService.restock(id) : order;
+    }
+    if (order.status !== "paid" && order.status !== "fulfilled") {
+      throw new HttpError(409, "invalid_status_transition", `A ${order.status} order can't be refunded`, {
+        status: order.status,
+      });
+    }
+    if (!order.stripe.paymentIntentId) {
+      throw new HttpError(409, "no_payment", "This order has no Stripe payment to refund");
+    }
+
+    await checkoutService.refundOrder(id, order.stripe.paymentIntentId, restock);
+    return adminOrdersService.getById(id);
+  },
+
+  /** Puts a refunded order's items back in stock (once), e.g. when the parcel comes back. */
+  async restock(id: string): Promise<AdminOrder> {
+    const order = await adminOrdersService.getById(id);
+    if (order.status !== "refunded") {
+      throw new HttpError(409, "invalid_status_transition", "Only refunded orders can be restocked", {
+        status: order.status,
+      });
+    }
+
+    await checkoutService.restockRefundedOrder(id);
+    return adminOrdersService.getById(id);
   },
 };

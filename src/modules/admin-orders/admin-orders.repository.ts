@@ -16,8 +16,9 @@ export type OrderWithItems = OrderRow & {
 };
 
 const ORDER_DETAIL_COLUMNS = `id, status, customer_email, customer_name, currency, subtotal_cents, total_cents,
-  shipping_address, stripe_checkout_session_id, stripe_payment_intent_id,
-  created_at, updated_at, paid_at, fulfilled_at, cancelled_at,
+  shipping_address, stripe_checkout_session_id, stripe_payment_intent_id, stripe_refund_id,
+  created_at, updated_at, paid_at, fulfilled_at, cancelled_at, refunded_at, restocked_at,
+  confirmation_email_sent_at,
   order_items (id, product_id, product_name, unit_price_cents, quantity, line_total_cents)`;
 
 export const adminOrdersRepository = {

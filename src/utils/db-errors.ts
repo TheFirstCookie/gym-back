@@ -27,6 +27,11 @@ export function toClientError(error: unknown, messages: { unique?: string; forei
   }
 }
 
+/** True for "a row still references this one", e.g. deleting a category that has products. */
+export function isForeignKeyViolation(error: unknown): boolean {
+  return (error as DbError | null)?.code === FOREIGN_KEY_VIOLATION;
+}
+
 /** Awaits a database write and rethrows constraint violations as client errors. */
 export async function withClientErrors<T>(
   operation: PromiseLike<T>,

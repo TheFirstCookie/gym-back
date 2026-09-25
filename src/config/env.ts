@@ -25,6 +25,11 @@ const envSchema = z.object({
     .regex(/^(sk|rk)_(test|live)_/, "Must be a Stripe secret key (sk_test_...)")
     .optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_", "Must start with whsec_").optional(),
+  // Order confirmation emails are optional too: without a key, orders just aren't emailed.
+  RESEND_API_KEY: z.string().startsWith("re_", "Must be a Resend API key (re_...)").optional(),
+  // Sender shown to customers. resend.dev works without a domain, but only delivers to
+  // the email address of your own Resend account; verify a domain to email anyone.
+  EMAIL_FROM: z.string().min(3).default("ForgeFit Supply <onboarding@resend.dev>"),
   // Where Stripe sends shoppers after paying. Defaults to the first CORS origin.
   STOREFRONT_URL: z
     .url()

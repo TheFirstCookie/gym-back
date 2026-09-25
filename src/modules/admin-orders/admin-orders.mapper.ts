@@ -1,5 +1,5 @@
 import { stripeDashboardPaymentUrl } from "../../lib/stripe.js";
-import type { Json } from "../../types/database.js";
+import { toShippingAddress } from "../../utils/shipping-address.js";
 import type { OrderWithItems } from "./admin-orders.repository.js";
 import { ORDER_STATUSES } from "./admin-orders.schema.js";
 import type {
@@ -8,7 +8,6 @@ import type {
   OrderListRow,
   OrderStatus,
   OrderStatusCounts,
-  ShippingAddress,
 } from "./admin-orders.types.js";
 
 export function toAdminOrderListItem(row: OrderListRow): AdminOrderListItem {
@@ -26,33 +25,6 @@ export function toAdminOrderListItem(row: OrderListRow): AdminOrderListItem {
   };
 }
 
-function textOrNull(value: Json | undefined): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function isObject(value: Json | undefined): value is { [key: string]: Json | undefined } {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * orders.shipping_address holds Stripe's shipping_details as-is:
- * { name, address: { line1, line2, city, state, postal_code, country } }.
- */
-export function toShippingAddress(value: Json | null): ShippingAddress | null {
-  if (!isObject(value)) return null;
-  const address = isObject(value.address) ? value.address : {};
-
-  return {
-    name: textOrNull(value.name),
-    line1: textOrNull(address.line1),
-    line2: textOrNull(address.line2),
-    city: textOrNull(address.city),
-    state: textOrNull(address.state),
-    postalCode: textOrNull(address.postal_code),
-    country: textOrNull(address.country),
-  };
-}
-
 export function toAdminOrder(row: OrderWithItems): AdminOrder {
   const itemCount = row.order_items.reduce((total, item) => total + item.quantity, 0);
 
@@ -61,10 +33,14 @@ export function toAdminOrder(row: OrderWithItems): AdminOrder {
     subtotalCents: row.subtotal_cents,
     shippingAddress: toShippingAddress(row.shipping_address),
     cancelledAt: row.cancelled_at,
+    refundedAt: row.refunded_at,
+    restockedAt: row.restocked_at,
+    confirmationEmailSentAt: row.confirmation_email_sent_at,
     updatedAt: row.updated_at,
     stripe: {
       checkoutSessionId: row.stripe_checkout_session_id,
       paymentIntentId: row.stripe_payment_intent_id,
+      refundId: row.stripe_refund_id,
       dashboardUrl: row.stripe_payment_intent_id ? stripeDashboardPaymentUrl(row.stripe_payment_intent_id) : null,
     },
     items: row.order_items

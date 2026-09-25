@@ -1,5 +1,6 @@
 import type { Database } from "../../types/database.js";
 import type { Pagination } from "../../utils/pagination.js";
+import type { ShippingAddress } from "../../utils/shipping-address.js";
 
 export type OrderStatus = Database["public"]["Enums"]["order_status"];
 
@@ -21,18 +22,6 @@ export type AdminOrderListItem = {
   fulfilledAt: string | null;
 };
 
-/** Where to ship, flattened from what Stripe Checkout collected. */
-export type ShippingAddress = {
-  name: string | null;
-  line1: string | null;
-  line2: string | null;
-  city: string | null;
-  state: string | null;
-  postalCode: string | null;
-  /** ISO 3166-1 alpha-2, e.g. "MD". */
-  country: string | null;
-};
-
 export type AdminOrderItem = {
   id: string;
   /** null when the product has since been deleted; the name and price are snapshots. */
@@ -48,10 +37,16 @@ export type AdminOrder = AdminOrderListItem & {
   subtotalCents: number;
   shippingAddress: ShippingAddress | null;
   cancelledAt: string | null;
+  refundedAt: string | null;
+  /** When a refunded order's items went back in stock (null: they didn't, yet). */
+  restockedAt: string | null;
+  /** When the order confirmation email went out (null: not sent, e.g. email isn't set up). */
+  confirmationEmailSentAt: string | null;
   updatedAt: string;
   stripe: {
     checkoutSessionId: string | null;
     paymentIntentId: string | null;
+    refundId: string | null;
     /** The payment in the Stripe dashboard, when there is one. */
     dashboardUrl: string | null;
   };

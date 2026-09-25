@@ -5,7 +5,7 @@
 // non-null here (the generator marks every view column nullable) because the views
 // derive them from NOT NULL columns.
 
-type OrderStatus = "pending" | "paid" | "cancelled" | "fulfilled";
+type OrderStatus = "pending" | "paid" | "cancelled" | "fulfilled" | "refunded";
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -176,6 +176,10 @@ export type Database = {
           paid_at: string | null;
           cancelled_at: string | null;
           fulfilled_at: string | null;
+          refunded_at: string | null;
+          stripe_refund_id: string | null;
+          restocked_at: string | null;
+          confirmation_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -193,6 +197,10 @@ export type Database = {
           paid_at?: string | null;
           cancelled_at?: string | null;
           fulfilled_at?: string | null;
+          refunded_at?: string | null;
+          stripe_refund_id?: string | null;
+          restocked_at?: string | null;
+          confirmation_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -210,6 +218,10 @@ export type Database = {
           paid_at?: string | null;
           cancelled_at?: string | null;
           fulfilled_at?: string | null;
+          refunded_at?: string | null;
+          stripe_refund_id?: string | null;
+          restocked_at?: string | null;
+          confirmation_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -363,6 +375,44 @@ export type Database = {
       order_status_counts: {
         Args: Record<string, never>;
         Returns: { status: OrderStatus; order_count: number }[];
+      };
+      admin_categories: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          name: string;
+          slug: string;
+          accent_color: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+          product_count: number;
+          active_product_count: number;
+        }[];
+      };
+      admin_brands: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          name: string;
+          slug: string;
+          created_at: string;
+          updated_at: string;
+          product_count: number;
+          active_product_count: number;
+        }[];
+      };
+      admin_dashboard_stats: {
+        Args: { p_currency?: string; p_days?: number; p_low_stock?: number };
+        Returns: Json;
+      };
+      mark_order_refunded: {
+        Args: { p_order_id: string; p_refund_id?: string | null };
+        Returns: OrderStatus | null;
+      };
+      restock_refunded_order: {
+        Args: { p_order_id: string };
+        Returns: boolean;
       };
     };
     Enums: {

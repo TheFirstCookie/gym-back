@@ -27,15 +27,19 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   │   ├── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
 │   │   ├── 0004_checkout.sql              # order columns + create/pay/cancel order functions
 │   │   ├── 0005_admin_orders.sql          # shipped timestamp + admin order list/counts
-│   │   └── 0006_schedule_stale_order_cleanup.sql # hourly pg_cron job releasing abandoned stock
+│   │   ├── 0006_schedule_stale_order_cleanup.sql # hourly pg_cron job releasing abandoned stock
+│   │   ├── 0007_admin_catalog_and_dashboard.sql  # category/brand counts + dashboard stats
+│   │   └── 0008_refunds_and_order_emails.sql     # refunded status, restock, email-sent flag
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
     ├── app.ts                       # Express app: middleware, routes, error handling
     ├── config/
     │   ├── env.ts                   # zod-validated environment (fails fast)
-    │   └── cors.ts                  # allowed origins
+    │   ├── cors.ts                  # allowed origins
+    │   └── store.ts                 # store currency, low-stock threshold, email copy
     ├── lib/
+    │   ├── email.ts                 # Resend client (skipped when not configured)
     │   ├── logger.ts                # JSON logs in production, readable locally
     │   ├── stripe.ts                # Stripe client (null when not configured)
     │   └── supabase.ts              # single service-role client
@@ -70,7 +74,11 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
         ├── products/                # GET /products[/:slug[/related]]
         ├── admin-session/           # GET /admin/session/me
         ├── admin-products/          # /admin/products CRUD
-        ├── admin-orders/            # /admin/orders list, detail, mark shipped
+        ├── admin-orders/            # /admin/orders list, detail, ship, refund, restock
+        ├── admin-categories/        # /admin/categories CRUD
+        ├── admin-brands/            # /admin/brands CRUD
+        ├── admin-dashboard/         # GET /admin/dashboard
+        ├── order-emails/            # order confirmation email (template + send-once logic)
         ├── admin-uploads/           # POST /admin/uploads/product-images
         └── checkout/                # Stripe Checkout sessions, order lookup, webhook
             ├── checkout.gateway.ts  # the only code that calls Stripe
@@ -107,6 +115,8 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 | `LOG_LEVEL`                 | no       | `debug`, `info`, `warn` or `error`                                      |
 | `STRIPE_SECRET_KEY`         | no       | `sk_test_…`; without it checkout answers 503 and everything else works  |
 | `STRIPE_WEBHOOK_SECRET`     | no       | `whsec_…`; needed for the webhook to accept events                      |
+| `RESEND_API_KEY`            | no       | `re_…`; enables order confirmation emails                               |
+| `EMAIL_FROM`                | no       | Sender, default `ForgeFit Supply <onboarding@resend.dev>`               |
 | `STOREFRONT_URL`            | no       | Where Stripe returns shoppers; defaults to the first `CORS_ORIGINS` entry |
 
 ## Supabase setup
@@ -114,7 +124,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0006`), then `supabase/seed.sql`.
+     (`0001` to `0008`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -172,8 +182,14 @@ How an order flows:
      with the customer's email, name and shipping address.
    - `checkout.session.expired` / `async_payment_failed`: the order becomes `cancelled` and
      its stock goes back on sale.
+   - `charge.refunded` (a full refund made in the Stripe dashboard): the order becomes
+     `refunded`. Restocking stays a separate admin decision.
 5. The success page calls `GET /checkout/sessions/:sessionId`. If the webhook hasn't landed
    yet, the API asks Stripe directly, so a paid order never shows as pending.
+
+Once an order is paid, the customer gets a confirmation email (when `RESEND_API_KEY` is
+set). `orders.confirmation_email_sent_at` makes sure it goes out once, however many times
+Stripe repeats the event; if sending fails, the next repeat tries again.
 
 Every step is idempotent: Stripe can deliver an event twice and nothing is paid or
 restocked twice. Pending orders older than two hours are released on the next checkout, in
@@ -186,9 +202,18 @@ case an "expired" webhook was missed.
 3. **Developers > Webhooks > Add endpoint**:
    - URL: `https://<your-render-service>.onrender.com/api/v1/checkout/webhook`
    - Events: `checkout.session.completed`, `checkout.session.expired`,
-     `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`
+     `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+     and `charge.refunded` (optional: keeps orders in sync with refunds made in Stripe)
    - Copy the endpoint's **Signing secret** (`whsec_…`) into `STRIPE_WEBHOOK_SECRET`.
 4. Pay with the test card `4242 4242 4242 4242`, any future date, any CVC.
+
+### Order emails (optional)
+
+1. Create a free account at [resend.com](https://resend.com) and an **API key**.
+2. Set `RESEND_API_KEY` on Render (and in `.env` locally).
+3. Until you verify a domain, Resend only delivers mail sent from `onboarding@resend.dev`
+   to your own account's address, so test with that email at checkout. With a verified
+   domain, set `EMAIL_FROM` to an address on it.
 
 Locally, the [Stripe CLI](https://docs.stripe.com/stripe-cli) forwards webhooks to your
 machine and prints the signing secret to use in `.env`:
@@ -317,6 +342,17 @@ expired token gets 401, a non-admin account 403.
 | GET    | `/admin/orders`                  | Newest first; `status=pending\|paid\|fulfilled\|cancelled\|all`, `q`, `page`, `pageSize` |
 | GET    | `/admin/orders/:id`              | One order: items, shipping address, Stripe references           |
 | PATCH  | `/admin/orders/:id`              | `{ "status": "fulfilled" }` marks a paid order shipped; `"paid"` undoes it |
+| POST   | `/admin/orders/:id/refund`       | Full refund through Stripe; `{ "restock": true }` also restocks the items |
+| POST   | `/admin/orders/:id/restock`      | Put a refunded order's items back in stock (once)               |
+| GET    | `/admin/categories`              | All categories with `productCount` (hidden included) and `activeProductCount` |
+| POST   | `/admin/categories`              | Create: `name`, optional `slug`, `accent` (`#rrggbb`), `sortOrder` |
+| PATCH  | `/admin/categories/:id`          | Update only the fields sent                                     |
+| DELETE | `/admin/categories/:id`          | Delete an empty category; 409 `in_use` while products use it    |
+| GET    | `/admin/brands`                  | All brands with product counts                                  |
+| POST   | `/admin/brands`                  | Create: `name`, optional `slug`                                 |
+| PATCH  | `/admin/brands/:id`              | Update only the fields sent                                     |
+| DELETE | `/admin/brands/:id`              | Delete an unused brand; 409 `in_use` while products use it      |
+| GET    | `/admin/dashboard`               | Sales, orders to ship, daily revenue, best sellers, low stock, recent orders; `days=7\|30\|90` (default 30) |
 
 Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `currency`,
 `stock`, `tag`, `imageUrl`, `description`, `specs` (array of strings), `sortOrder`,
@@ -329,6 +365,14 @@ Orders: `q` matches part of the customer's email or name, or of the order id. Th
 paid ↔ fulfilled can be changed by hand, since payment and cancellation come from Stripe;
 anything else returns 409 `invalid_status_transition`. Order detail includes
 `stripe.dashboardUrl`, a link to the payment in the Stripe dashboard.
+
+Refunds return the full amount through Stripe (the idempotency key makes a double click
+harmless) and move the order to `refunded`, which leaves it out of the dashboard's revenue.
+Whether the items go back in stock is a separate choice, made with the refund or later
+with `/restock`, since it depends on the parcel coming back.
+
+Dashboard figures count paid and shipped orders on the day they were paid (UTC), in the
+store currency (`src/config/store.ts`, along with the low-stock threshold).
 
 Image uploads: `POST /admin/uploads/product-images` with `{ "contentType": "image/webp" }`
 returns `path`, `token` and `publicUrl`. The browser uploads the file with Supabase's

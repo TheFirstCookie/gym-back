@@ -24,3 +24,6 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # Order confirmation emails (Resend). Leave empty to skip emails.
+      - key: RESEND_API_KEY
+        sync: false

@@ -5,17 +5,18 @@
 --             the admin decides separately whether the items go back in stock
 --
 -- Plain Postgres 15+. Run the whole file at once: the new enum value is only used inside
--- function bodies, which Postgres doesn't check until they run.
+-- function bodies, which Postgres doesn't check until they run. Safe to run again: every
+-- statement skips or replaces what an earlier run already created.
 
 alter type public.order_status add value if not exists 'refunded';
 
 alter table public.orders
-  add column refunded_at                timestamptz,
-  add column stripe_refund_id           text,
+  add column if not exists refunded_at                timestamptz,
+  add column if not exists stripe_refund_id           text,
   -- Set when a refunded order's items were put back in stock.
-  add column restocked_at               timestamptz,
+  add column if not exists restocked_at               timestamptz,
   -- Set when the confirmation email goes out, so a retried webhook never sends it twice.
-  add column confirmation_email_sent_at timestamptz;
+  add column if not exists confirmation_email_sent_at timestamptz;
 
 -- ---------------------------------------------------------------------------
 -- Refunded: record it once
@@ -25,7 +26,7 @@ alter table public.orders
 -- 'refunded' when this call refunded it (or it already was), otherwise its current status,
 -- or null when the order doesn't exist. Safe to call from the admin panel and from Stripe's
 -- refund webhook for the same refund, in either order.
-create function public.mark_order_refunded(p_order_id uuid, p_refund_id text default null)
+create or replace function public.mark_order_refunded(p_order_id uuid, p_refund_id text default null)
 returns public.order_status
 language plpgsql
 set search_path = ''
@@ -57,7 +58,7 @@ $$;
 -- A separate step from the refund because it's the admin's call (was the parcel returned?),
 -- and so a refund webhook arriving first can never cancel the restock. Returns true only
 -- for the call that restocked.
-create function public.restock_refunded_order(p_order_id uuid)
+create or replace function public.restock_refunded_order(p_order_id uuid)
 returns boolean
 language plpgsql
 set search_path = ''

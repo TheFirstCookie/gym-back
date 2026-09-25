@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
-import { supabase } from "../lib/supabase.js";
 import { forbidden, unauthorized } from "../utils/http-error.js";
+import { readBearerToken, userFromToken } from "./auth-token.js";
 
 export type AdminUser = {
   id: string;
@@ -8,11 +8,6 @@ export type AdminUser = {
 };
 
 const ADMIN_ROLE = "admin";
-
-function readBearerToken(header: string | undefined): string | null {
-  const match = header?.match(/^Bearer\s+(\S+)$/i);
-  return match?.[1] ?? null;
-}
 
 /**
  * Lets a request through only if it carries a valid Supabase session for an admin.
@@ -26,13 +21,13 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
   const token = readBearerToken(req.headers.authorization);
   if (!token) throw unauthorized("Sign in to continue");
 
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) throw unauthorized("Your session has expired, sign in again");
+  const user = await userFromToken(token);
+  if (!user) throw unauthorized("Your session has expired, sign in again");
 
-  if (data.user.app_metadata?.role !== ADMIN_ROLE) {
+  if (user.app_metadata?.role !== ADMIN_ROLE) {
     throw forbidden("This account doesn't have admin access");
   }
 
-  res.locals.admin = { id: data.user.id, email: data.user.email ?? null };
+  res.locals.admin = { id: user.id, email: user.email ?? null };
   next();
 };

@@ -180,6 +180,7 @@ export type Database = {
           stripe_refund_id: string | null;
           restocked_at: string | null;
           confirmation_email_sent_at: string | null;
+          user_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -201,6 +202,7 @@ export type Database = {
           stripe_refund_id?: string | null;
           restocked_at?: string | null;
           confirmation_email_sent_at?: string | null;
+          user_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -222,6 +224,7 @@ export type Database = {
           stripe_refund_id?: string | null;
           restocked_at?: string | null;
           confirmation_email_sent_at?: string | null;
+          user_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -272,6 +275,46 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      wishlist_items: {
+        Row: { user_id: string; product_id: string; created_at: string };
+        Insert: { user_id: string; product_id: string; created_at?: string };
+        Update: { user_id?: string; product_id?: string; created_at?: string };
+        Relationships: [];
+      };
+      product_reviews: {
+        Row: {
+          id: string;
+          product_id: string;
+          user_id: string;
+          author_name: string;
+          rating: number;
+          title: string | null;
+          body: string;
+          verified_purchase: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          user_id: string;
+          author_name: string;
+          rating: number;
+          title?: string | null;
+          body?: string;
+          verified_purchase?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          author_name?: string;
+          rating?: number;
+          title?: string | null;
+          body?: string;
+          verified_purchase?: boolean;
+        };
+        Relationships: [];
       };
     };
     Views: {
@@ -405,6 +448,22 @@ export type Database = {
       admin_dashboard_stats: {
         Args: { p_currency?: string; p_days?: number; p_low_stock?: number };
         Returns: Json;
+      };
+      product_rating_summary: {
+        Args: { p_product_id: string };
+        Returns: {
+          review_count: number;
+          average: number | null;
+          one_star: number;
+          two_star: number;
+          three_star: number;
+          four_star: number;
+          five_star: number;
+        }[];
+      };
+      has_purchased_product: {
+        Args: { p_user_id: string; p_product_id: string };
+        Returns: boolean;
       };
       mark_order_refunded: {
         Args: { p_order_id: string; p_refund_id?: string | null };

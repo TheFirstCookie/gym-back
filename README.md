@@ -29,7 +29,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   │   ├── 0005_admin_orders.sql          # shipped timestamp + admin order list/counts
 │   │   ├── 0006_schedule_stale_order_cleanup.sql # hourly pg_cron job releasing abandoned stock
 │   │   ├── 0007_admin_catalog_and_dashboard.sql  # category/brand counts + dashboard stats
-│   │   └── 0008_refunds_and_order_emails.sql     # refunded status, restock, email-sent flag
+│   │   ├── 0008_refunds_and_order_emails.sql     # refunded status, restock, email-sent flag
+│   │   └── 0009_customer_accounts.sql            # orders.user_id, wishlists, product reviews
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -48,7 +49,9 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
     │   ├── not-found.ts
     │   ├── request-logger.ts
     │   ├── rate-limit.ts            # per-IP limits in the API's error format
+    │   ├── auth-token.ts            # reads the Bearer token and asks Supabase whose it is
     │   ├── require-admin.ts         # Supabase session + admin role check for /admin routes
+    │   ├── require-user.ts          # signed-in shopper (requireUser) or optional (optionalUser)
     │   └── validate.ts              # zod validation of params / query / body
     ├── routes/
     │   └── index.ts                 # mounts module routers under /api/v1
@@ -78,6 +81,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
         ├── admin-categories/        # /admin/categories CRUD
         ├── admin-brands/            # /admin/brands CRUD
         ├── admin-dashboard/         # GET /admin/dashboard
+        ├── account/                 # /account: the shopper's orders and wishlist
+        ├── reviews/                 # product reviews + /admin/reviews moderation
         ├── order-emails/            # order confirmation email (template + send-once logic)
         ├── admin-uploads/           # POST /admin/uploads/product-images
         └── checkout/                # Stripe Checkout sessions, order lookup, webhook
@@ -124,7 +129,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0008`), then `supabase/seed.sql`.
+     (`0001` to `0009`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -150,17 +155,30 @@ The `/admin` routes accept only a signed-in Supabase user whose `app_metadata.ro
    where email = 'you@example.com';
    ```
 
-3. Optional but recommended: **Authentication > Sign In / Providers**, turn off
-   **Allow new users to sign up**, so the admin login can't be used to create accounts.
+The role is checked on every request, so removing it takes effect immediately. Shoppers sign
+up through the same Supabase Auth but never get the role, so they can't reach `/admin`.
 
-The role is checked on every request, so removing it takes effect immediately.
+### Shopper accounts
+
+Shoppers create accounts on the storefront (email and password). In **Authentication >
+Sign In / Providers**:
+
+- keep **Allow new users to sign up** on;
+- under **Email**, turn **Confirm email** off for the demo. Supabase's built-in mailer only
+  sends to your project's team members, about two emails an hour, so other people would
+  never get the confirmation link. With custom SMTP (**Authentication > Emails > SMTP
+  Settings**, e.g. Resend's SMTP) it can stay on.
+
+Orders are linked to an account by user id when the shopper is signed in at checkout, never
+by email, so signing up with someone else's address shows nothing of theirs. Deleting a user
+keeps their orders (the link is cleared) and removes their wishlist and reviews.
 
 ### Row Level Security
 
 Row Level Security is enabled on every table. Categories, brands and active products have
 a public read-only policy, so the frontend can later read them (or subscribe through
-Supabase Realtime) with the anon key. Orders have no policies, so only this server can
-access them.
+Supabase Realtime) with the anon key. Orders, wishlists and reviews have no policies, so
+only this server can access them.
 
 ## Stripe checkout
 
@@ -279,6 +297,7 @@ Validation failures use `code: "validation_error"` and list the problems in `det
 | GET    | `/products`               | Active products: filters, search, sort, pages, brand facets  |
 | GET    | `/products/:slug`         | One active product with description and specs                |
 | GET    | `/products/:slug/related` | Up to `?limit=` (default 3) related products                 |
+| GET    | `/products/:slug/reviews` | Newest first (`page`, `pageSize` up to 50, default 10); `meta.summary` has the count, average and stars distribution |
 
 `GET /products` query parameters, all optional:
 
@@ -320,10 +339,33 @@ can show how many products it would add.
 | POST   | `/checkout/sessions/:sessionId/abandon` | Shopper left Stripe without paying: close the session, release stock |
 | POST   | `/checkout/webhook`            | Stripe only; the signature is verified against the raw body       |
 
+With a shopper's token (optional), the order is saved to their account and Stripe pre-fills
+their email; an invalid or expired token just means a guest checkout.
+
 Creating a session is limited to 10 per minute per IP, since each one holds stock for up to
 30 minutes. Cart problems come back as 409 with the product in `details`:
 `insufficient_stock` (`{ slug, available }`) or `product_unavailable` (`{ slug }`). Without
 Stripe keys the endpoint answers 503 `checkout_unavailable`.
+
+### Shopper account
+
+Send the shopper's Supabase access token as `Authorization: Bearer <token>`; without a valid
+one these answer 401.
+
+| Method | Path                                 | Description                                                  |
+| ------ | ------------------------------------ | ------------------------------------------------------------ |
+| GET    | `/account/orders`                    | Their paid, shipped and refunded orders, newest first (up to 50), with items |
+| GET    | `/account/orders/:id`                | One of their orders; 404 for anyone else's                   |
+| GET    | `/account/wishlist`                  | Saved products (still in the shop), newest first, with `addedAt` |
+| PUT    | `/account/wishlist/:slug`            | Save a product (204; saving twice is fine)                   |
+| DELETE | `/account/wishlist/:slug`            | Remove it (204)                                              |
+| GET    | `/products/:slug/reviews/mine`       | Their review of the product, or `null`                       |
+| PUT    | `/products/:slug/reviews/mine`       | `{ "rating": 1-5, "title"?, "body"? }` creates or replaces it (20 per minute) |
+| DELETE | `/products/:slug/reviews/mine`       | Delete it (204)                                              |
+
+Reviews show the author as first name and last initial ("Ana B."), taken from the name they
+signed up with, and never their email. `verifiedPurchase` is set when they have a paid or
+shipped order containing the product.
 
 ### Admin
 
@@ -352,6 +394,8 @@ expired token gets 401, a non-admin account 403.
 | POST   | `/admin/brands`                  | Create: `name`, optional `slug`                                 |
 | PATCH  | `/admin/brands/:id`              | Update only the fields sent                                     |
 | DELETE | `/admin/brands/:id`              | Delete an unused brand; 409 `in_use` while products use it      |
+| GET    | `/admin/reviews`                 | Every review, newest first, with product and author id; `page`, `pageSize` (default 25) |
+| DELETE | `/admin/reviews/:id`             | Remove a review                                                 |
 | GET    | `/admin/dashboard`               | Sales, orders to ship, revenue over time, best sellers, low stock, recent orders; `days=7\|30\|90\|all` (default 30) |
 
 Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `currency`,

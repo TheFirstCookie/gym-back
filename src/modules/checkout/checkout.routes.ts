@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { rateLimit } from "../../middleware/rate-limit.js";
+import { optionalUser } from "../../middleware/require-user.js";
 import { validate } from "../../middleware/validate.js";
 import { checkoutController } from "./checkout.controller.js";
 import { checkoutSessionParamsSchema, createCheckoutSchema } from "./checkout.schema.js";
@@ -12,6 +13,7 @@ checkoutRouter.post(
   // Every checkout holds stock for up to 30 minutes, so cap how often one visitor can start one.
   rateLimit({ windowMs: 60_000, limit: 10, message: "Too many checkout attempts, try again in a minute" }),
   validate({ body: createCheckoutSchema }),
+  optionalUser,
   checkoutController.createSession,
 );
 

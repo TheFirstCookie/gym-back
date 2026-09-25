@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { logger } from "../../lib/logger.js";
+import type { CustomerUser } from "../../middleware/require-user.js";
 import { notFound } from "../../utils/http-error.js";
 import { orderEmailsService } from "../order-emails/order-emails.service.js";
 import { checkoutGateway } from "./checkout.gateway.js";
@@ -51,7 +52,7 @@ export const checkoutService = {
    * Turns a cart into a pending order with reserved stock, then a Stripe Checkout session.
    * Prices always come from the database; the client only says what and how many.
    */
-  async createCheckout(items: CartItem[]): Promise<CheckoutSession> {
+  async createCheckout(items: CartItem[], user: CustomerUser | null = null): Promise<CheckoutSession> {
     // Fail before reserving anything if checkout can't complete.
     checkoutGateway.assertConfigured();
 
@@ -64,8 +65,8 @@ export const checkoutService = {
     const order = await checkoutRepository.createPendingOrder(items);
 
     try {
-      const session = await checkoutGateway.createSession(order);
-      await checkoutRepository.attachSession(order.orderId, session.id);
+      const session = await checkoutGateway.createSession(order, user?.email ?? null);
+      await checkoutRepository.attachSession(order.orderId, session.id, user?.id ?? null);
 
       if (!session.url) throw new Error(`Checkout session ${session.id} has no URL`);
       return { sessionId: session.id, url: session.url };

@@ -49,7 +49,8 @@ export const checkoutGateway = {
     requireStorefrontUrl();
   },
 
-  async createSession(order: PendingOrder): Promise<Stripe.Checkout.Session> {
+  /** `customerEmail` pre-fills Stripe's email field for signed-in shoppers. */
+  async createSession(order: PendingOrder, customerEmail: string | null = null): Promise<Stripe.Checkout.Session> {
     const client = requireStripe();
     const storefront = requireStorefrontUrl();
 
@@ -57,6 +58,7 @@ export const checkoutGateway = {
       return await client.checkout.sessions.create(
         {
           mode: "payment",
+          customer_email: customerEmail ?? undefined,
           line_items: order.lines.map((line) => ({
             quantity: line.quantity,
             price_data: {

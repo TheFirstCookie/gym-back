@@ -6,7 +6,8 @@ import { checkoutService } from "./checkout.service.js";
 
 export const checkoutController = {
   async createSession(req: Request<unknown, unknown, CreateCheckoutInput>, res: Response) {
-    res.status(201).json({ data: await checkoutService.createCheckout(req.body.items) });
+    // Signed-in shoppers (optionalUser) get the order in their account history.
+    res.status(201).json({ data: await checkoutService.createCheckout(req.body.items, res.locals.user ?? null) });
   },
 
   async getOrder(req: Request<CheckoutSessionParams>, res: Response) {

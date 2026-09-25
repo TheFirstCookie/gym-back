@@ -81,10 +81,11 @@ export const checkoutRepository = {
     }
   },
 
-  async attachSession(orderId: string, sessionId: string): Promise<void> {
+  /** Links the order to its Stripe session and, for a signed-in shopper, to their account. */
+  async attachSession(orderId: string, sessionId: string, userId: string | null): Promise<void> {
     await supabase
       .from("orders")
-      .update({ stripe_checkout_session_id: sessionId })
+      .update({ stripe_checkout_session_id: sessionId, user_id: userId })
       .eq("id", orderId)
       .throwOnError();
   },

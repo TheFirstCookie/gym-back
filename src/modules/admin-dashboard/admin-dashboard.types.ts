@@ -1,4 +1,5 @@
 import type { OrderStatus } from "../admin-orders/admin-orders.types.js";
+import type { DashboardRange } from "./admin-dashboard.schema.js";
 
 /** The shape admin_dashboard_stats (migration 0007) returns. */
 export type DashboardStatsRow = {
@@ -25,24 +26,31 @@ export type DashboardStatsRow = {
   }[];
 };
 
+export type ChartBucket = "day" | "week" | "month";
+
 export type Dashboard = {
   currency: string;
+  range: DashboardRange;
+  /** Length of the window in days, today included. */
   days: number;
-  /** Sales in the last `days` days (today included) and the same span before it. */
+  /** First day of the window (UTC, "YYYY-MM-DD"). */
+  since: string;
+  /** Sales in the window, and in the same span before it (null for "all"). */
   sales: {
     revenueCents: number;
     orderCount: number;
     averageOrderCents: number;
-    previousRevenueCents: number;
-    previousOrderCount: number;
+    previousRevenueCents: number | null;
+    previousOrderCount: number | null;
     allTimeRevenueCents: number;
   };
   orders: {
     toShip: number;
     awaitingPayment: number;
   };
-  /** One entry per UTC day, oldest first. */
-  daily: { date: string; revenueCents: number; orderCount: number }[];
+  /** Revenue over time, oldest first. Long windows are grouped by week or month. */
+  bucket: ChartBucket;
+  series: { date: string; revenueCents: number; orderCount: number }[];
   topProducts: { productId: string | null; name: string; units: number; revenueCents: number }[];
   lowStock: { id: string; name: string; slug: string; stock: number; image: string | null }[];
   /** Latest paid orders (any status after payment). */

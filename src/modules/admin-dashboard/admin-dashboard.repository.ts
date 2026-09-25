@@ -13,4 +13,19 @@ export const adminDashboardRepository = {
 
     return data as unknown as DashboardStatsRow;
   },
+
+  /** When the first sale in this currency was paid, or null before the first sale. */
+  async firstSaleAt(currency: string): Promise<string | null> {
+    const { data } = await supabase
+      .from("orders")
+      .select("paid_at")
+      .in("status", ["paid", "fulfilled"])
+      .eq("currency", currency)
+      .order("paid_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+      .throwOnError();
+
+    return data?.paid_at ?? null;
+  },
 };

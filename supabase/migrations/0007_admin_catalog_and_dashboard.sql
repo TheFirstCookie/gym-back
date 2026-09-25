@@ -1,5 +1,6 @@
 -- ForgeFit Supply: read helpers for the admin panel's category/brand screens and dashboard.
 -- Plain Postgres 15+, like the earlier migrations. Only the API (service role) may call them.
+-- Safe to run again: it only (re)defines functions and permissions.
 
 -- ---------------------------------------------------------------------------
 -- Categories and brands with product counts
@@ -7,7 +8,7 @@
 
 -- product_count includes hidden products (they still block deleting the category);
 -- active_product_count is what the storefront shows.
-create function public.admin_categories()
+create or replace function public.admin_categories()
 returns table (
   id                   uuid,
   name                 text,
@@ -33,7 +34,7 @@ as $$
   order by c.sort_order, c.name;
 $$;
 
-create function public.admin_brands()
+create or replace function public.admin_brands()
 returns table (
   id                   uuid,
   name                 text,
@@ -74,7 +75,7 @@ $$;
 --     top_products:  [{ product_id, name, units, revenue_cents }]  best sellers in the window
 --     low_stock:     [{ id, name, slug, stock, image_url }]   live products at or under p_low_stock
 --     recent_orders: [{ id, status, customer_name, customer_email, total_cents, currency, created_at }] }
-create function public.admin_dashboard_stats(
+create or replace function public.admin_dashboard_stats(
   p_currency  text default 'usd',
   p_days      integer default 30,
   p_low_stock integer default 5
@@ -106,14 +107,21 @@ as $$
       and s.paid_at < w.since
   ),
   daily as (
+    -- Days are stepped in UTC wall time, so a session in a daylight-saving time zone can't
+    -- shift the day boundaries.
     select
       d.day::date as date,
       coalesce(sum(s.total_cents), 0)::bigint as revenue_cents,
       count(s.id)::integer as order_count
     from window_start w
-    cross join generate_series(w.since, w.since + make_interval(days => greatest(p_days, 1) - 1), interval '1 day') as d(day)
+    cross join generate_series(
+      w.since at time zone 'utc',
+      (w.since at time zone 'utc') + make_interval(days => greatest(p_days, 1) - 1),
+      interval '1 day'
+    ) as d(day)
     left join current_sales s
-      on s.paid_at >= d.day and s.paid_at < d.day + interval '1 day'
+      on s.paid_at >= d.day at time zone 'utc'
+      and s.paid_at < (d.day + interval '1 day') at time zone 'utc'
     group by d.day
   ),
   top_products as (

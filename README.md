@@ -352,7 +352,7 @@ expired token gets 401, a non-admin account 403.
 | POST   | `/admin/brands`                  | Create: `name`, optional `slug`                                 |
 | PATCH  | `/admin/brands/:id`              | Update only the fields sent                                     |
 | DELETE | `/admin/brands/:id`              | Delete an unused brand; 409 `in_use` while products use it      |
-| GET    | `/admin/dashboard`               | Sales, orders to ship, daily revenue, best sellers, low stock, recent orders; `days=7\|30\|90` (default 30) |
+| GET    | `/admin/dashboard`               | Sales, orders to ship, revenue over time, best sellers, low stock, recent orders; `days=7\|30\|90\|all` (default 30) |
 
 Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `currency`,
 `stock`, `tag`, `imageUrl`, `description`, `specs` (array of strings), `sortOrder`,
@@ -372,7 +372,9 @@ Whether the items go back in stock is a separate choice, made with the refund or
 with `/restock`, since it depends on the parcel coming back.
 
 Dashboard figures count paid and shipped orders on the day they were paid (UTC), in the
-store currency (`src/config/store.ts`, along with the low-stock threshold).
+store currency. `days=all` covers everything since the first sale; windows longer than 90
+days come back grouped by week (`bucket: "week"`), and longer than two years by month. The store currency and the low-stock threshold are
+set in `src/config/store.ts`.
 
 Image uploads: `POST /admin/uploads/product-images` with `{ "contentType": "image/webp" }`
 returns `path`, `token` and `publicUrl`. The browser uploads the file with Supabase's

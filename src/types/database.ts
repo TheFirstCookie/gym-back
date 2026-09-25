@@ -7,6 +7,8 @@
 
 type OrderStatus = "pending" | "paid" | "cancelled" | "fulfilled";
 
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
 type ProductListingRow = {
   id: string;
   name: string;
@@ -168,6 +170,11 @@ export type Database = {
           subtotal_cents: number;
           total_cents: number;
           stripe_checkout_session_id: string | null;
+          customer_name: string | null;
+          shipping_address: Json | null;
+          stripe_payment_intent_id: string | null;
+          paid_at: string | null;
+          cancelled_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -179,6 +186,11 @@ export type Database = {
           subtotal_cents: number;
           total_cents: number;
           stripe_checkout_session_id?: string | null;
+          customer_name?: string | null;
+          shipping_address?: Json | null;
+          stripe_payment_intent_id?: string | null;
+          paid_at?: string | null;
+          cancelled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -190,6 +202,11 @@ export type Database = {
           subtotal_cents?: number;
           total_cents?: number;
           stripe_checkout_session_id?: string | null;
+          customer_name?: string | null;
+          shipping_address?: Json | null;
+          stripe_payment_intent_id?: string | null;
+          paid_at?: string | null;
+          cancelled_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -294,6 +311,30 @@ export type Database = {
       related_products: {
         Args: { p_slug: string; p_limit?: number };
         Returns: (ProductListingRow & { search_document: string })[];
+      };
+      create_pending_order: {
+        Args: { p_items: Json };
+        Returns: Json;
+      };
+      mark_order_paid: {
+        Args: {
+          p_order_id: string;
+          p_session_id: string;
+          p_payment_intent_id?: string | null;
+          p_customer_email?: string | null;
+          p_customer_name?: string | null;
+          p_shipping_address?: Json | null;
+          p_total_cents?: number | null;
+        };
+        Returns: OrderStatus | null;
+      };
+      cancel_pending_order: {
+        Args: { p_order_id: string };
+        Returns: boolean;
+      };
+      release_stale_orders: {
+        Args: { p_older_than?: string };
+        Returns: number;
       };
     };
     Enums: {

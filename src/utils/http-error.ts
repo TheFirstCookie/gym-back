@@ -30,4 +30,9 @@ export const notFound = (message = "Resource not found") => new HttpError(404, "
 
 export const conflict = (message = "Resource already exists") => new HttpError(409, "conflict", message);
 
+export const tooManyRequests = (message = "Too many requests, try again in a minute") =>
+  new HttpError(429, "rate_limited", message);
+
 export const internalError = () => new HttpError(500, "internal_error", "Something went wrong");
+
+export const serviceUnavailable = (code: string, message: string) => new HttpError(503, code, message);

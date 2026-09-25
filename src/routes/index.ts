@@ -5,6 +5,7 @@ import { adminSessionRouter } from "../modules/admin-session/admin-session.route
 import { adminUploadsRouter } from "../modules/admin-uploads/admin-uploads.routes.js";
 import { brandsRouter } from "../modules/brands/brands.routes.js";
 import { categoriesRouter } from "../modules/categories/categories.routes.js";
+import { checkoutRouter } from "../modules/checkout/checkout.routes.js";
 import { healthRouter } from "../modules/health/health.routes.js";
 import { productsRouter } from "../modules/products/products.routes.js";
 
@@ -23,4 +24,5 @@ apiRouter.use("/health", healthRouter);
 apiRouter.use("/categories", categoriesRouter);
 apiRouter.use("/brands", brandsRouter);
 apiRouter.use("/products", productsRouter);
+apiRouter.use("/checkout", checkoutRouter);
 apiRouter.use("/admin", adminRouter);

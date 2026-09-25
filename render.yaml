@@ -19,3 +19,8 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # Stripe checkout (test mode keys). Leave empty to run without checkout.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false

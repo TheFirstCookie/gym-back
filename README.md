@@ -24,7 +24,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   ├── migrations/
 │   │   ├── 0001_initial_schema.sql        # tables, indexes, view, triggers, RLS
 │   │   ├── 0002_product_search.sql        # listing view + search/facets/related functions
-│   │   └── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
+│   │   ├── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
+│   │   └── 0004_checkout.sql              # order columns + create/pay/cancel order functions
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -34,11 +35,13 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
     │   └── cors.ts                  # allowed origins
     ├── lib/
     │   ├── logger.ts                # JSON logs in production, readable locally
+    │   ├── stripe.ts                # Stripe client (null when not configured)
     │   └── supabase.ts              # single service-role client
     ├── middleware/
     │   ├── error-handler.ts         # every error -> { error: { code, message, details? } }
     │   ├── not-found.ts
     │   ├── request-logger.ts
+    │   ├── rate-limit.ts            # per-IP limits in the API's error format
     │   ├── require-admin.ts         # Supabase session + admin role check for /admin routes
     │   └── validate.ts              # zod validation of params / query / body
     ├── routes/
@@ -65,7 +68,10 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
         ├── products/                # GET /products[/:slug[/related]]
         ├── admin-session/           # GET /admin/session/me
         ├── admin-products/          # /admin/products CRUD
-        └── admin-uploads/           # POST /admin/uploads/product-images
+        ├── admin-uploads/           # POST /admin/uploads/product-images
+        └── checkout/                # Stripe Checkout sessions, order lookup, webhook
+            ├── checkout.gateway.ts  # the only code that calls Stripe
+            └── ...                  # routes, controller (+ webhook), service, repository, mapper
 ```
 
 ## Local setup
@@ -96,13 +102,16 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 | `PORT`                      | no       | Defaults to `4000`; Render sets its own                                 |
 | `NODE_ENV`                  | no       | `development` (default), `test` or `production`                         |
 | `LOG_LEVEL`                 | no       | `debug`, `info`, `warn` or `error`                                      |
+| `STRIPE_SECRET_KEY`         | no       | `sk_test_…`; without it checkout answers 503 and everything else works  |
+| `STRIPE_WEBHOOK_SECRET`     | no       | `whsec_…`; needed for the webhook to accept events                      |
+| `STOREFRONT_URL`            | no       | Where Stripe returns shoppers; defaults to the first `CORS_ORIGINS` entry |
 
 ## Supabase setup
 
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001`, `0002`, `0003`), then `supabase/seed.sql`.
+     (`0001` to `0004`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -140,11 +149,56 @@ a public read-only policy, so the frontend can later read them (or subscribe thr
 Supabase Realtime) with the anon key. Orders have no policies, so only this server can
 access them.
 
+## Stripe checkout
+
+Checkout uses [Stripe Checkout](https://docs.stripe.com/payments/checkout) in **test mode**:
+the shopper pays on Stripe's hosted page, so card details never reach this server.
+
+How an order flows:
+
+1. `POST /checkout/sessions` with the cart (`[{ slug, quantity }]`). In one transaction the
+   database checks every product is active and in stock, **reserves the stock**, and saves a
+   `pending` order with prices copied from the catalog (the client never sends prices).
+2. The API creates a Checkout session for that order (valid 30 minutes) and returns its
+   `url`; the storefront redirects there.
+3. Stripe sends the shopper back to `STOREFRONT_URL/checkout/success?session_id=…` (or to
+   `/cart?checkout=cancelled`).
+4. Stripe calls the webhook:
+   - `checkout.session.completed` / `async_payment_succeeded`: the order becomes `paid`,
+     with the customer's email, name and shipping address.
+   - `checkout.session.expired` / `async_payment_failed`: the order becomes `cancelled` and
+     its stock goes back on sale.
+5. The success page calls `GET /checkout/sessions/:sessionId`. If the webhook hasn't landed
+   yet, the API asks Stripe directly, so a paid order never shows as pending.
+
+Every step is idempotent: Stripe can deliver an event twice and nothing is paid or
+restocked twice. Pending orders older than two hours are released on the next checkout, in
+case an "expired" webhook was missed.
+
+### Setting it up (test mode)
+
+1. Create a free account at [stripe.com](https://stripe.com) and stay in **Test mode**.
+2. **Developers > API keys**: copy the **Secret key** (`sk_test_…`) into `STRIPE_SECRET_KEY`.
+3. **Developers > Webhooks > Add endpoint**:
+   - URL: `https://<your-render-service>.onrender.com/api/v1/checkout/webhook`
+   - Events: `checkout.session.completed`, `checkout.session.expired`,
+     `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`
+   - Copy the endpoint's **Signing secret** (`whsec_…`) into `STRIPE_WEBHOOK_SECRET`.
+4. Pay with the test card `4242 4242 4242 4242`, any future date, any CVC.
+
+Locally, the [Stripe CLI](https://docs.stripe.com/stripe-cli) forwards webhooks to your
+machine and prints the signing secret to use in `.env`:
+
+```bash
+stripe listen --forward-to localhost:4000/api/v1/checkout/webhook
+```
+
 ## Deploying to Render
 
 **With the Blueprint:** in the Render dashboard choose **New > Blueprint**, select this
-repository, and fill in the three secret variables when prompted (`SUPABASE_URL`,
-`SUPABASE_SERVICE_ROLE_KEY`, `CORS_ORIGINS`).
+repository, and fill in the secret variables when prompted (`SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `CORS_ORIGINS`, and for checkout `STRIPE_SECRET_KEY` and
+`STRIPE_WEBHOOK_SECRET`).
 
 **Manually:** create a **Web Service** from the repository with:
 
@@ -152,7 +206,7 @@ repository, and fill in the three secret variables when prompted (`SUPABASE_URL`
 - Build command: `npm ci --include=dev && npm run build`
 - Start command: `npm start`
 - Health check path: `/api/v1/health`
-- Environment: `NODE_ENV=production` plus the three variables above
+- Environment: `NODE_ENV=production` plus the variables above
 
 `--include=dev` matters: with `NODE_ENV=production`, `npm ci` skips devDependencies and the
 TypeScript build would fail.
@@ -217,6 +271,19 @@ Validation failures use `code: "validation_error"` and list the problems in `det
 
 Prices are integer cents. Brand facet counts ignore the `brand` filter, so every brand chip
 can show how many products it would add.
+
+### Checkout
+
+| Method | Path                           | Description                                                       |
+| ------ | ------------------------------ | ----------------------------------------------------------------- |
+| POST   | `/checkout/sessions`           | `{ "items": [{ "slug", "quantity" }] }` → `{ sessionId, url }` (201) |
+| GET    | `/checkout/sessions/:sessionId` | The order behind a session: status, items, totals, email         |
+| POST   | `/checkout/webhook`            | Stripe only; the signature is verified against the raw body       |
+
+Creating a session is limited to 10 per minute per IP, since each one holds stock for up to
+30 minutes. Cart problems come back as 409 with the product in `details`:
+`insufficient_stock` (`{ slug, available }`) or `product_unavailable` (`{ slug }`). Without
+Stripe keys the endpoint answers 503 `checkout_unavailable`.
 
 ### Admin
 

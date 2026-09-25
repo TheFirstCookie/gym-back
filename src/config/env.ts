@@ -19,6 +19,17 @@ const envSchema = z.object({
   SUPABASE_URL: z.url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   CORS_ORIGINS: originList,
+  // Checkout is optional: without these the API still runs and checkout answers 503.
+  STRIPE_SECRET_KEY: z
+    .string()
+    .regex(/^(sk|rk)_(test|live)_/, "Must be a Stripe secret key (sk_test_...)")
+    .optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_", "Must start with whsec_").optional(),
+  // Where Stripe sends shoppers after paying. Defaults to the first CORS origin.
+  STOREFRONT_URL: z
+    .url()
+    .transform((url) => new URL(url).origin)
+    .optional(),
 });
 
 // Dashboards often save a cleared field as "", which should count as "not set".
@@ -34,7 +45,13 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+const isProduction = parsed.data.NODE_ENV === "production";
+
 export const env = {
   ...parsed.data,
-  isProduction: parsed.data.NODE_ENV === "production",
+  isProduction,
+  storefrontUrl:
+    parsed.data.STOREFRONT_URL ??
+    parsed.data.CORS_ORIGINS[0] ??
+    (isProduction ? undefined : "http://localhost:3000"),
 };

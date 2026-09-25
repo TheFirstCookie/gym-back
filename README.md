@@ -26,7 +26,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   │   ├── 0002_product_search.sql        # listing view + search/facets/related functions
 │   │   ├── 0003_product_images_bucket.sql # Storage bucket for product photos (Supabase only)
 │   │   ├── 0004_checkout.sql              # order columns + create/pay/cancel order functions
-│   │   └── 0005_admin_orders.sql          # shipped timestamp + admin order list/counts
+│   │   ├── 0005_admin_orders.sql          # shipped timestamp + admin order list/counts
+│   │   └── 0006_schedule_stale_order_cleanup.sql # hourly pg_cron job releasing abandoned stock
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -113,7 +114,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0005`), then `supabase/seed.sql`.
+     (`0001` to `0006`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -220,6 +221,16 @@ frontend's `NEXT_PUBLIC_API_URL` at the Render URL.
 Free-tier services spin down after about 15 minutes without traffic, and the first request
 after that takes up to a minute while the instance starts. Supabase free projects also
 pause after a week of inactivity.
+
+**Keeping it awake:** point a free uptime monitor (UptimeRobot, cron-job.org) at
+`https://<service>.onrender.com/api/v1/health` every 10 minutes. The health check also
+queries the database, so it keeps Supabase active too. Staying awake all month uses about
+744 of the workspace's 750 free instance hours, so with other free services on the same
+workspace, ping only during the day instead.
+
+**Abandoned checkouts:** migration `0006` schedules `release_stale_orders()` hourly with
+pg_cron, so stock held by a checkout whose "expired" webhook never arrived is released
+within about 2 hours. Check it with `select * from cron.job;` in the SQL Editor.
 
 ## API
 

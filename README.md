@@ -27,6 +27,7 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   ├── unit/                        # schemas, utils, services, dashboard, email template
 │   └── http/                        # requests through the whole Express app
 ├── supabase/
+│   ├── templates/                   # branded Supabase Auth emails (paste into the dashboard)
 │   ├── migrations/
 │   │   ├── 0001_initial_schema.sql        # tables, indexes, view, triggers, RLS
 │   │   ├── 0002_product_search.sql        # listing view + search/facets/related functions
@@ -166,16 +167,64 @@ The `/admin` routes accept only a signed-in Supabase user whose `app_metadata.ro
 The role is checked on every request, so removing it takes effect immediately. Shoppers sign
 up through the same Supabase Auth but never get the role, so they can't reach `/admin`.
 
-### Shopper accounts
+### Shopper accounts and account emails
 
-Shoppers create accounts on the storefront (email and password). In **Authentication >
-Sign In / Providers**:
+Shoppers create accounts on the storefront (email and password). Supabase Auth sends the
+account emails; this API isn't involved:
 
-- keep **Allow new users to sign up** on;
-- under **Email**, turn **Confirm email** off for the demo. Supabase's built-in mailer only
-  sends to your project's team members, about two emails an hour, so other people would
-  never get the confirmation link. With custom SMTP (**Authentication > Emails > SMTP
-  Settings**, e.g. Resend's SMTP) it can stay on.
+| Email                 | Sent when                                         | Link opens                     |
+| --------------------- | ------------------------------------------------- | ------------------------------ |
+| Confirm sign up       | Someone creates an account                        | `/account` (signed in)         |
+| Magic link            | "Email me a sign-in link" on the sign-in page     | The page they came from        |
+| Reset password        | "Forgot your password?"                           | `/account/reset-password`      |
+| Change email address  | A new email is saved in Settings (to both addresses) | `/account/settings`         |
+| Password changed      | The password changes (security notification)      | -                              |
+| Email address changed | The email changes (security notification)         | -                              |
+
+Branded versions of all six are in `supabase/templates/`.
+
+**1. Send email through your own SMTP.** Supabase's built-in mailer only reaches your
+project's team members, two emails an hour. Under **Authentication > Emails > SMTP
+Settings**, turn on custom SMTP with one of these free options:
+
+- **Gmail** (no domain needed): make or use a Gmail account for the shop, turn on 2-step
+  verification, create an app password at <https://myaccount.google.com/apppasswords>,
+  then use host `smtp.gmail.com`, port `465`, username = the Gmail address, password = the
+  app password, sender email = the same address. About 500 emails a day.
+- **Resend** (needs a domain you own, verified in Resend under Domains): host
+  `smtp.resend.com`, port `465`, username `resend`, password = a Resend API key, sender
+  e.g. `no-reply@yourdomain.com`. 100 emails a day, 3,000 a month on the free plan. With a
+  verified domain, set `EMAIL_FROM` on Render to the same domain so order confirmations
+  reach every customer too (they go through Resend's HTTP API, since Render's free plan
+  blocks SMTP).
+
+Then raise **Authentication > Rate Limits > emails sent per hour** from the starting 30 if
+you expect more sign-ups.
+
+**2. Allow the links back to the shop.** **Authentication > URL Configuration**: Site URL
+`https://gymshop-three.vercel.app`, and under Redirect URLs add
+`https://gymshop-three.vercel.app/**` and `http://localhost:3000/**`. Links to any other
+address are refused.
+
+**3. Turn the emails on.** **Authentication > Sign In / Providers**: keep **Allow new
+users to sign up** on, and under **Email** turn **Confirm email** on (and keep **Secure
+email change** on, which confirms a new address from both inboxes). Under
+**Authentication > Emails**, paste each file from `supabase/templates/` into its template
+(subjects below) and switch on the **Password changed** and **Email address changed**
+notifications.
+
+| Template              | Subject                           | File                    |
+| --------------------- | --------------------------------- | ----------------------- |
+| Confirm sign up       | Confirm your ForgeFit account     | `confirm-signup.html`   |
+| Magic link            | Your ForgeFit sign-in link        | `magic-link.html`       |
+| Reset password        | Reset your ForgeFit password      | `reset-password.html`   |
+| Change email address  | Confirm your new email            | `change-email.html`     |
+| Password changed      | Your ForgeFit password was changed | `password-changed.html` |
+| Email address changed | Your ForgeFit email was changed   | `email-changed.html`    |
+
+Some email providers open links to scan them, which can use up a one-time link before the
+shopper clicks it. If people report links "already used", the sign-in page lets them ask
+for a new one.
 
 Orders are linked to an account by user id when the shopper is signed in at checkout, never
 by email, so signing up with someone else's address shows nothing of theirs. Deleting a user

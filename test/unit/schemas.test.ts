@@ -9,6 +9,14 @@ describe("checkout request", () => {
     });
   });
 
+  it("accepts a variant id for products with variants", () => {
+    const variant = "a1111111-1111-4111-8111-111111111111";
+    expect(createCheckoutSchema.parse({ items: [{ slug: "bumper-plate", variant, quantity: 1 }] })).toEqual({
+      items: [{ slug: "bumper-plate", variant, quantity: 1 }],
+    });
+    expect(createCheckoutSchema.safeParse({ items: [{ slug: "bumper-plate", variant: "20kg", quantity: 1 }] }).success).toBe(false);
+  });
+
   it("never accepts a price from the browser", () => {
     const result = createCheckoutSchema.safeParse({ items: [{ slug: "mat", quantity: 1, priceCents: 1 }] });
     expect(result.success).toBe(false);

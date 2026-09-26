@@ -17,8 +17,10 @@ const pendingOrder: PendingOrder = {
   lines: [
     {
       productId: "66666666-6666-4666-8666-666666666666",
+      variantId: null,
       slug: "competition-kettlebell",
       name: "Competition Kettlebell",
+      variantName: null,
       imageUrl: null,
       unitPriceCents: 8600,
       quantity: 2,

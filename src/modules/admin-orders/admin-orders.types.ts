@@ -27,6 +27,8 @@ export type AdminOrderItem = {
   /** null when the product has since been deleted; the name and price are snapshots. */
   productId: string | null;
   name: string;
+  /** The variant that was bought (e.g. "20 kg"), so the right one gets packed. */
+  variantName: string | null;
   unitPriceCents: number;
   quantity: number;
   lineTotalCents: number;

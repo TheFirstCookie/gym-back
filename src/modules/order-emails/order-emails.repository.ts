@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase.js";
+import { byItemName, itemLabel } from "../../utils/order-items.js";
 import { toShippingAddress } from "../../utils/shipping-address.js";
 import type { ConfirmationOrder } from "./order-emails.types.js";
 
@@ -8,7 +9,7 @@ export const orderEmailsRepository = {
       .from("orders")
       .select(
         `id, customer_email, customer_name, currency, subtotal_cents, total_cents, shipping_address,
-         order_items (product_name, unit_price_cents, quantity, line_total_cents)`,
+         order_items (product_name, variant_name, unit_price_cents, quantity, line_total_cents)`,
       )
       .eq("id", orderId)
       .maybeSingle()
@@ -27,11 +28,14 @@ export const orderEmailsRepository = {
       items: data.order_items
         .map((item) => ({
           name: item.product_name,
+          variantName: item.variant_name,
           unitPriceCents: item.unit_price_cents,
           quantity: item.quantity,
           lineTotalCents: item.line_total_cents,
         }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort(byItemName)
+        // The email shows one name per line: "Olympic plate (20 kg)".
+        .map(({ variantName, ...item }) => ({ ...item, name: itemLabel(item.name, variantName) })),
     };
   },
 

@@ -1,11 +1,14 @@
 import { toProduct } from "../products/products.mapper.js";
 import type { ProductListingRow } from "../products/products.types.js";
+import { toAdminVariant } from "../variants/variants.mapper.js";
+import type { VariantRow } from "../variants/variants.types.js";
 import type { CreateProductInput, UpdateProductInput } from "./admin-products.schema.js";
 import type { AdminProduct, ProductInsertRow, ProductUpdateRow } from "./admin-products.types.js";
 
-export function toAdminProduct(row: ProductListingRow): AdminProduct {
+export function toAdminProduct(row: ProductListingRow, variants: VariantRow[] = []): AdminProduct {
   return {
-    ...toProduct(row),
+    ...toProduct(row, variants),
+    variants: variants.map(toAdminVariant),
     isActive: row.is_active,
     sortOrder: row.sort_order,
     createdAt: row.created_at,

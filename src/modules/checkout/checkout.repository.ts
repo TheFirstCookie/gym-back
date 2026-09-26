@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase.js";
 import { badRequest, HttpError } from "../../utils/http-error.js";
+import { byItemName } from "../../utils/order-items.js";
 import type {
   CartItem,
   OrderStatus,
@@ -17,28 +18,47 @@ type PendingOrderRow = {
   subtotal_cents: number;
   lines: {
     product_id: string;
+    variant_id: string | null;
     slug: string;
     name: string;
+    variant_name: string | null;
     image_url: string | null;
     unit_price_cents: number;
     quantity: number;
   }[];
 };
 
-// Custom SQLSTATEs raised by create_pending_order (migration 0004), as client errors the
-// storefront can act on: it gets the product slug, and for stock problems what's left.
+/** Which cart line a problem is about: the product, and the variant when it has one. */
+function cartLine(slug: string | null | undefined, variant: string | null | undefined) {
+  return { slug: slug ?? null, variant: variant || null };
+}
+
+// Custom SQLSTATEs raised by create_pending_order (migrations 0004 and 0010), as client
+// errors the storefront can act on: it gets the cart line (product slug and variant id),
+// and for stock problems what's left.
 function toCheckoutError(error: unknown): HttpError | null {
   const { code, details, hint } = (error ?? {}) as DbError;
 
   switch (code) {
     case "FF001":
-      return new HttpError(409, "product_unavailable", "A product in your cart is no longer available", {
-        slug: details,
-      });
-    case "FF002":
+      // hint: the variant that's gone, if the line had one.
+      return new HttpError(
+        409,
+        "product_unavailable",
+        "A product in your cart is no longer available",
+        cartLine(details, hint),
+      );
+    case "FF002": {
+      // details: "slug" or "slug:variant id".
+      const [slug, variant] = (details ?? "").split(":");
       return new HttpError(409, "insufficient_stock", "Not enough stock for a product in your cart", {
-        slug: details,
+        ...cartLine(slug, variant),
         available: Number(hint),
+      });
+    }
+    case "FF005":
+      return new HttpError(409, "variant_required", "Pick a size or option for a product in your cart", {
+        slug: details ?? null,
       });
     case "FF003":
       return badRequest("Products in one order must share a currency");
@@ -57,8 +77,10 @@ function toPendingOrder(row: PendingOrderRow): PendingOrder {
     lines: row.lines.map(
       (line): PendingOrderLine => ({
         productId: line.product_id,
+        variantId: line.variant_id,
         slug: line.slug,
         name: line.name,
+        variantName: line.variant_name,
         imageUrl: line.image_url,
         unitPriceCents: line.unit_price_cents,
         quantity: line.quantity,
@@ -68,7 +90,7 @@ function toPendingOrder(row: PendingOrderRow): PendingOrder {
 }
 
 const ORDER_SUMMARY_COLUMNS = `id, status, currency, subtotal_cents, total_cents, customer_email, created_at, paid_at,
-  order_items (product_id, product_name, unit_price_cents, quantity, line_total_cents)`;
+  order_items (product_id, product_name, variant_name, unit_price_cents, quantity, line_total_cents)`;
 
 export const checkoutRepository = {
   /** Validates the cart, reserves stock and snapshots prices, atomically. */
@@ -163,13 +185,16 @@ export const checkoutRepository = {
       customerEmail: data.customer_email,
       createdAt: data.created_at,
       paidAt: data.paid_at,
-      items: data.order_items.map((item) => ({
-        productId: item.product_id,
-        name: item.product_name,
-        unitPriceCents: item.unit_price_cents,
-        quantity: item.quantity,
-        lineTotalCents: item.line_total_cents,
-      })),
+      items: data.order_items
+        .map((item) => ({
+          productId: item.product_id,
+          name: item.product_name,
+          variantName: item.variant_name,
+          unitPriceCents: item.unit_price_cents,
+          quantity: item.quantity,
+          lineTotalCents: item.line_total_cents,
+        }))
+        .sort(byItemName),
     };
   },
 };

@@ -3,6 +3,7 @@ import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import { stripe } from "../../lib/stripe.js";
 import { HttpError, serviceUnavailable } from "../../utils/http-error.js";
+import { itemLabel } from "../../utils/order-items.js";
 import type { PendingOrder } from "./checkout.types.js";
 
 // The only place that talks to Stripe, like a repository is for the database.
@@ -65,10 +66,14 @@ export const checkoutGateway = {
               currency: order.currency,
               unit_amount: line.unitPriceCents,
               product_data: {
-                name: line.name,
+                name: itemLabel(line.name, line.variantName),
                 // Stripe only shows images it can fetch over https.
                 images: line.imageUrl?.startsWith("https://") ? [line.imageUrl] : undefined,
-                metadata: { product_id: line.productId, slug: line.slug },
+                metadata: {
+                  product_id: line.productId,
+                  slug: line.slug,
+                  ...(line.variantId ? { variant_id: line.variantId } : {}),
+                },
               },
             },
           })),

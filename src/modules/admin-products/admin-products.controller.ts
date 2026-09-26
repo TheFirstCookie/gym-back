@@ -3,6 +3,7 @@ import type { IdParams } from "../../utils/schemas.js";
 import type {
   AdminProductListQuery,
   CreateProductInput,
+  SaveVariantsInput,
   UpdateProductInput,
 } from "./admin-products.schema.js";
 import { adminProductsService } from "./admin-products.service.js";
@@ -24,6 +25,10 @@ export const adminProductsController = {
 
   async update(req: Request<IdParams, unknown, UpdateProductInput>, res: Response) {
     res.json({ data: await adminProductsService.update(req.params.id, req.body) });
+  },
+
+  async saveVariants(req: Request<IdParams, unknown, SaveVariantsInput>, res: Response) {
+    res.json({ data: await adminProductsService.saveVariants(req.params.id, req.body) });
   },
 
   async archive(req: Request<IdParams>, res: Response) {

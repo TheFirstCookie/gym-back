@@ -37,7 +37,8 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 │   │   ├── 0006_schedule_stale_order_cleanup.sql # hourly pg_cron job releasing abandoned stock
 │   │   ├── 0007_admin_catalog_and_dashboard.sql  # category/brand counts + dashboard stats
 │   │   ├── 0008_refunds_and_order_emails.sql     # refunded status, restock, email-sent flag
-│   │   └── 0009_customer_accounts.sql            # orders.user_id, wishlists, product reviews
+│   │   ├── 0009_customer_accounts.sql            # orders.user_id, wishlists, product reviews
+│   │   └── 0010_product_variants.sql             # weights/sizes/colours with own price + stock
 │   └── seed.sql                     # catalog matching the frontend mock data
 └── src/
     ├── server.ts                    # HTTP server + graceful shutdown
@@ -70,6 +71,7 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
     │   ├── db-errors.ts             # constraint violations -> 400 / 409
     │   ├── pagination.ts            # ?page & pageSize -> limit/offset + response meta
     │   ├── schemas.ts               # shared zod schemas (slug, id, repeated query params)
+    │   ├── order-items.ts           # "Name (variant)" labels and order line sorting
     │   └── slugify.ts
     └── modules/
         ├── health/                  # GET /health
@@ -82,6 +84,7 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
         │   └── categories.types.ts
         ├── brands/                  # GET /brands
         ├── products/                # GET /products[/:slug[/related]]
+        ├── variants/                # product variants: read by products, saved by admin-products
         ├── admin-session/           # GET /admin/session/me
         ├── admin-products/          # /admin/products CRUD
         ├── admin-orders/            # /admin/orders list, detail, ship, refund, restock
@@ -138,7 +141,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0009`), then `supabase/seed.sql`.
+     (`0001` to `0010`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -248,9 +251,10 @@ the shopper pays on Stripe's hosted page, so card details never reach this serve
 
 How an order flows:
 
-1. `POST /checkout/sessions` with the cart (`[{ slug, quantity }]`). In one transaction the
-   database checks every product is active and in stock, **reserves the stock**, and saves a
-   `pending` order with prices copied from the catalog (the client never sends prices).
+1. `POST /checkout/sessions` with the cart (`[{ slug, variant?, quantity }]`). In one
+   transaction the database checks every product (and chosen variant) is active and in
+   stock, **reserves the stock**, and saves a `pending` order with prices and variant names
+   copied from the catalog (the client never sends prices).
 2. The API creates a Checkout session for that order (valid 30 minutes) and returns its
    `url`; the storefront redirects there.
 3. Stripe sends the shopper back to `STOREFRONT_URL/checkout/success?session_id=…`, or to
@@ -356,7 +360,7 @@ Validation failures use `code: "validation_error"` and list the problems in `det
 | GET    | `/categories/:slug`       | One category; 404 if the slug doesn't exist                  |
 | GET    | `/brands`                 | All brands, alphabetical                                     |
 | GET    | `/products`               | Active products: filters, search, sort, pages, brand facets  |
-| GET    | `/products/:slug`         | One active product with description and specs                |
+| GET    | `/products/:slug`         | One active product with description, specs and `variants`    |
 | GET    | `/products/:slug/related` | Up to `?limit=` (default 3) related products                 |
 | GET    | `/products/:slug/reviews` | Newest first (`page`, `pageSize` up to 50, default 10); `meta.summary` has the count, average and stars distribution |
 
@@ -376,7 +380,8 @@ Validation failures use `code: "validation_error"` and list the problems in `det
   "data": [
     {
       "id": "…", "name": "Competition Kettlebell", "slug": "competition-kettlebell",
-      "priceCents": 8600, "currency": "usd", "stock": 24, "tag": "New", "image": "https://…",
+      "priceCents": 5900, "priceMaxCents": 11900, "hasVariants": true,
+      "currency": "usd", "stock": 24, "tag": "New", "image": "https://…",
       "category": { "id": "…", "name": "Strength", "slug": "strength" },
       "brand": { "id": "…", "name": "Kinetic Supply", "slug": "kinetic-supply" }
     }
@@ -391,11 +396,32 @@ Validation failures use `code: "validation_error"` and list the problems in `det
 Prices are integer cents. Brand facet counts ignore the `brand` filter, so every brand chip
 can show how many products it would add.
 
+### Product variants
+
+A product can come in several **variants** (weights, sizes, colours), each with its own
+price and stock, e.g. a kettlebell in 8, 16 and 24 kg. `GET /products/:slug` lists the ones
+on sale in display order:
+
+```json
+"variants": [
+  { "id": "…", "name": "8 kg", "priceCents": 5900, "stock": 6 },
+  { "id": "…", "name": "16 kg", "priceCents": 8600, "stock": 4 }
+]
+```
+
+While a product has variants, the database keeps its own `priceCents` at the cheapest one
+on sale and its `stock` at their total (triggers in migration `0010`), so listings, sorting
+by price and the low-stock report keep working unchanged. `priceMaxCents` lets cards show
+"From $59". Such a product is bought through a variant: checkout takes `variant` (its id)
+on each cart line and answers 409 `variant_required` without one. Orders keep the variant's
+name as a snapshot (`variantName` on order items), so they read correctly even after the
+variant is renamed or removed. Products without variants work exactly as before.
+
 ### Checkout
 
 | Method | Path                           | Description                                                       |
 | ------ | ------------------------------ | ----------------------------------------------------------------- |
-| POST   | `/checkout/sessions`           | `{ "items": [{ "slug", "quantity" }] }` → `{ sessionId, url }` (201) |
+| POST   | `/checkout/sessions`           | `{ "items": [{ "slug", "variant"?, "quantity" }] }` → `{ sessionId, url }` (201) |
 | GET    | `/checkout/sessions/:sessionId` | The order behind a session: status, items, totals, email         |
 | POST   | `/checkout/sessions/:sessionId/abandon` | Shopper left Stripe without paying: close the session, release stock |
 | POST   | `/checkout/webhook`            | Stripe only; the signature is verified against the raw body       |
@@ -404,8 +430,9 @@ With a shopper's token (optional), the order is saved to their account and Strip
 their email; an invalid or expired token just means a guest checkout.
 
 Creating a session is limited to 10 per minute per IP, since each one holds stock for up to
-30 minutes. Cart problems come back as 409 with the product in `details`:
-`insufficient_stock` (`{ slug, available }`) or `product_unavailable` (`{ slug }`). Without
+30 minutes. Cart problems come back as 409 with the cart line in `details` (`variant` is
+null for a product without variants): `insufficient_stock` (`{ slug, variant, available }`),
+`product_unavailable` (`{ slug, variant }`) or `variant_required` (`{ slug }`). Without
 Stripe keys the endpoint answers 503 `checkout_unavailable`.
 
 ### Shopper account
@@ -440,6 +467,7 @@ expired token gets 401, a non-admin account 403.
 | GET    | `/admin/products/:id`            | One product, including hidden ones                              |
 | POST   | `/admin/products`                | Create; `slug` is generated from `name` when omitted            |
 | PATCH  | `/admin/products/:id`            | Update only the fields sent                                     |
+| PUT    | `/admin/products/:id/variants`   | Replace the variant list (see below); returns the product       |
 | DELETE | `/admin/products/:id`            | Hide the product (`isActive: false`); restore with PATCH        |
 | POST   | `/admin/uploads/product-images`  | Signed URL for uploading one photo straight to Storage          |
 | GET    | `/admin/orders`                  | Newest first; `status=pending\|paid\|fulfilled\|cancelled\|all`, `q`, `page`, `pageSize` |
@@ -464,6 +492,13 @@ Product body fields: `name`, `slug`, `categoryId`, `brandId`, `priceCents`, `cur
 `isActive`. Unknown fields are rejected. A duplicate slug returns 409.
 
 "Deleting" hides a product instead of removing the row, so past orders keep their link to it.
+
+Variants: `PUT /admin/products/:id/variants` takes the product's whole list, in display
+order: `{ "variants": [{ "id"?, "name", "priceCents", "stock", "isActive"? }] }`. Rows with
+an `id` are updated, rows without one are created, and variants left out are deleted (their
+past order lines keep the name). Up to 30, names unique per product (400 in the request, 409
+from the database); `isActive: false` hides one without deleting it. An empty list turns it
+back into a plain product with its own price and stock. The whole save is one transaction.
 
 Orders: `q` matches part of the customer's email or name, or of the order id. The list's
 `meta.counts` has the number of orders per status (plus `all`) for the whole shop. Only

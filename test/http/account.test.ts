@@ -21,8 +21,8 @@ const orderRow: CustomerOrderRow = {
   refunded_at: null,
   shipping_address: { name: "Sam Shopper", address: { line1: "Str. 1", city: "Chisinau", country: "MD" } },
   order_items: [
-    { product_id: KETTLEBELL_ID, product_name: "Competition Kettlebell", unit_price_cents: 8600, quantity: 2, line_total_cents: 17200 },
-    { product_id: null, product_name: "Discontinued Band", unit_price_cents: 0, quantity: 1, line_total_cents: 0 },
+    { product_id: KETTLEBELL_ID, product_name: "Competition Kettlebell", variant_name: "16 kg", unit_price_cents: 8600, quantity: 2, line_total_cents: 17200 },
+    { product_id: null, product_name: "Discontinued Band", variant_name: null, unit_price_cents: 0, quantity: 1, line_total_cents: 0 },
   ],
 };
 
@@ -41,7 +41,7 @@ describe("GET /account/orders", () => {
     expect(order).toMatchObject({ id: ORDER_ID, status: "paid", itemCount: 3, totalCents: 17200 });
     expect(order.shippingAddress).toMatchObject({ name: "Sam Shopper", city: "Chisinau", country: "MD" });
     expect(order.items).toEqual([
-      expect.objectContaining({ name: "Competition Kettlebell", product: { slug: "competition-kettlebell", image: null } }),
+      expect.objectContaining({ name: "Competition Kettlebell", variantName: "16 kg", product: { slug: "competition-kettlebell", image: null } }),
       expect.objectContaining({ name: "Discontinued Band", product: null }),
     ]);
   });

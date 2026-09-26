@@ -9,6 +9,8 @@ export const createCheckoutSchema = z.strictObject({
     .array(
       z.strictObject({
         slug: slugSchema,
+        /** The chosen variant's id; required for products that have variants. */
+        variant: z.uuid().optional(),
         quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY),
       }),
     )

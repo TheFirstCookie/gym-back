@@ -5,14 +5,18 @@ export type OrderStatus = Database["public"]["Enums"]["order_status"];
 /** One cart line as sent by the storefront. */
 export type CartItem = {
   slug: string;
+  /** Variant id, for products with variants. */
+  variant?: string;
   quantity: number;
 };
 
 /** A line of a freshly reserved order, priced from the database (never from the client). */
 export type PendingOrderLine = {
   productId: string;
+  variantId: string | null;
   slug: string;
   name: string;
+  variantName: string | null;
   imageUrl: string | null;
   unitPriceCents: number;
   quantity: number;
@@ -49,6 +53,8 @@ export type OrderSummary = {
   items: {
     productId: string | null;
     name: string;
+    /** e.g. "20 kg"; null for a plain product. A snapshot, like the name. */
+    variantName: string | null;
     unitPriceCents: number;
     quantity: number;
     lineTotalCents: number;

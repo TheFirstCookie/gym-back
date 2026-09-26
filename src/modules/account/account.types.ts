@@ -17,6 +17,8 @@ export type CustomerOrder = {
   shippingAddress: ShippingAddress | null;
   items: {
     name: string;
+    /** e.g. "20 kg"; null for a plain product. */
+    variantName: string | null;
     quantity: number;
     unitPriceCents: number;
     lineTotalCents: number;

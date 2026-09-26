@@ -1,4 +1,5 @@
 import { stripeDashboardPaymentUrl } from "../../lib/stripe.js";
+import { byItemName } from "../../utils/order-items.js";
 import { toShippingAddress } from "../../utils/shipping-address.js";
 import type { OrderWithItems } from "./admin-orders.repository.js";
 import { ORDER_STATUSES } from "./admin-orders.schema.js";
@@ -48,12 +49,13 @@ export function toAdminOrder(row: OrderWithItems): AdminOrder {
         id: item.id,
         productId: item.product_id,
         name: item.product_name,
+        variantName: item.variant_name,
         unitPriceCents: item.unit_price_cents,
         quantity: item.quantity,
         lineTotalCents: item.line_total_cents,
       }))
       // All lines are written in one transaction, so there's no meaningful insertion order.
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort(byItemName),
   };
 }
 

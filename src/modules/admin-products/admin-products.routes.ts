@@ -5,6 +5,7 @@ import { adminProductsController } from "./admin-products.controller.js";
 import {
   adminProductListQuerySchema,
   createProductSchema,
+  saveVariantsSchema,
   updateProductSchema,
 } from "./admin-products.schema.js";
 
@@ -18,5 +19,10 @@ adminProductsRouter.patch(
   "/:id",
   validate({ params: idParamsSchema, body: updateProductSchema }),
   adminProductsController.update,
+);
+adminProductsRouter.put(
+  "/:id/variants",
+  validate({ params: idParamsSchema, body: saveVariantsSchema }),
+  adminProductsController.saveVariants,
 );
 adminProductsRouter.delete("/:id", validate({ params: idParamsSchema }), adminProductsController.archive);

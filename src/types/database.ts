@@ -235,7 +235,9 @@ export type Database = {
           id: string;
           order_id: string;
           product_id: string | null;
+          variant_id: string | null;
           product_name: string;
+          variant_name: string | null;
           unit_price_cents: number;
           quantity: number;
           line_total_cents: number;
@@ -245,7 +247,9 @@ export type Database = {
           id?: string;
           order_id: string;
           product_id?: string | null;
+          variant_id?: string | null;
           product_name: string;
+          variant_name?: string | null;
           unit_price_cents: number;
           quantity: number;
           created_at?: string;
@@ -275,6 +279,36 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      product_variants: {
+        Row: {
+          id: string;
+          product_id: string;
+          name: string;
+          price_cents: number;
+          stock: number;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          product_id: string;
+          name: string;
+          price_cents: number;
+          stock?: number;
+          sort_order?: number;
+          is_active?: boolean;
+        };
+        Update: {
+          name?: string;
+          price_cents?: number;
+          stock?: number;
+          sort_order?: number;
+          is_active?: boolean;
+        };
+        Relationships: [];
       };
       wishlist_items: {
         Row: { user_id: string; product_id: string; created_at: string };
@@ -472,6 +506,14 @@ export type Database = {
       restock_refunded_order: {
         Args: { p_order_id: string };
         Returns: boolean;
+      };
+      restock_order_items: {
+        Args: { p_order_id: string };
+        Returns: undefined;
+      };
+      admin_save_variants: {
+        Args: { p_product_id: string; p_variants: Json };
+        Returns: undefined;
       };
     };
     Enums: {

@@ -21,13 +21,13 @@ export type CustomerOrderRow = Pick<
 > & {
   order_items: Pick<
     OrderItemRow,
-    "product_id" | "product_name" | "unit_price_cents" | "quantity" | "line_total_cents"
+    "product_id" | "product_name" | "variant_name" | "unit_price_cents" | "quantity" | "line_total_cents"
   >[];
 };
 
 const ORDER_COLUMNS = `id, status, currency, subtotal_cents, total_cents, created_at, paid_at, fulfilled_at,
   refunded_at, shipping_address,
-  order_items (product_id, product_name, unit_price_cents, quantity, line_total_cents)`;
+  order_items (product_id, product_name, variant_name, unit_price_cents, quantity, line_total_cents)`;
 
 /** Orders a customer sees: paid ones, whatever happened after. Open or abandoned checkouts aren't orders yet. */
 const VISIBLE_STATUSES = ["paid", "fulfilled", "refunded"] as const;

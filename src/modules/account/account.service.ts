@@ -1,6 +1,7 @@
 import { notFound } from "../../utils/http-error.js";
+import { byItemName } from "../../utils/order-items.js";
 import { toShippingAddress } from "../../utils/shipping-address.js";
-import { toProductSummary } from "../products/products.mapper.js";
+import { toSummaries } from "../products/products.service.js";
 import { accountRepository, type CustomerOrderRow } from "./account.repository.js";
 import type { CustomerOrder, WishlistItem } from "./account.types.js";
 
@@ -28,12 +29,13 @@ async function toCustomerOrders(rows: CustomerOrderRow[]): Promise<CustomerOrder
     items: row.order_items
       .map((item) => ({
         name: item.product_name,
+        variantName: item.variant_name,
         quantity: item.quantity,
         unitPriceCents: item.unit_price_cents,
         lineTotalCents: item.line_total_cents,
         product: (item.product_id && links.get(item.product_id)) || null,
       }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort(byItemName),
   }));
 }
 
@@ -54,11 +56,12 @@ export const accountService = {
   async wishlist(userId: string): Promise<WishlistItem[]> {
     const entries = await accountRepository.wishlist(userId);
     const listings = await accountRepository.listings(entries.map((entry) => entry.product_id));
-    const byId = new Map(listings.map((row) => [row.id, row]));
+    const summaries = await toSummaries(listings);
+    const byId = new Map(summaries.map((product) => [product.id, product]));
 
     return entries.flatMap((entry) => {
-      const row = byId.get(entry.product_id);
-      return row ? [{ ...toProductSummary(row), addedAt: entry.created_at }] : [];
+      const product = byId.get(entry.product_id);
+      return product ? [{ ...product, addedAt: entry.created_at }] : [];
     });
   },
 

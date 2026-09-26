@@ -2,11 +2,13 @@ import { badRequest, notFound } from "../../utils/http-error.js";
 import { toLimitOffset, toPagination } from "../../utils/pagination.js";
 import { slugify } from "../../utils/slugify.js";
 import { productsRepository } from "../products/products.repository.js";
+import { variantsRepository } from "../variants/variants.repository.js";
 import { toAdminProduct, toInsertRow, toUpdateRow } from "./admin-products.mapper.js";
 import { adminProductsRepository } from "./admin-products.repository.js";
 import type {
   AdminProductListQuery,
   CreateProductInput,
+  SaveVariantsInput,
   UpdateProductInput,
 } from "./admin-products.schema.js";
 import type { AdminProduct, AdminProductListResponse } from "./admin-products.types.js";
@@ -26,8 +28,10 @@ export const adminProductsService = {
       productsRepository.brandFacets(filters),
     ]);
 
+    const variants = await variantsRepository.listByProduct(result.items.map((row) => row.id));
+
     return {
-      data: result.items.map(toAdminProduct),
+      data: result.items.map((row) => toAdminProduct(row, variants.get(row.id))),
       meta: {
         pagination: toPagination(query, result.total),
         facets: { brands: brandFacets },
@@ -38,7 +42,8 @@ export const adminProductsService = {
   async getById(id: string): Promise<AdminProduct> {
     const row = await adminProductsRepository.findById(id);
     if (!row) throw notFound("Product not found");
-    return toAdminProduct(row);
+    const variants = await variantsRepository.listByProduct([id]);
+    return toAdminProduct(row, variants.get(id));
   },
 
   async create(input: CreateProductInput): Promise<AdminProduct> {
@@ -52,6 +57,17 @@ export const adminProductsService = {
   async update(id: string, patch: UpdateProductInput): Promise<AdminProduct> {
     const found = await adminProductsRepository.update(id, toUpdateRow(patch));
     if (!found) throw notFound("Product not found");
+    return adminProductsService.getById(id);
+  },
+
+  /**
+   * Replaces the product's variants. With any, its price becomes the cheapest one's and its
+   * stock their total (the database keeps both in step from then on).
+   */
+  async saveVariants(id: string, input: SaveVariantsInput): Promise<AdminProduct> {
+    // A clear 404 rather than a foreign-key error for a missing product.
+    await adminProductsService.getById(id);
+    await variantsRepository.save(id, input.variants);
     return adminProductsService.getById(id);
   },
 

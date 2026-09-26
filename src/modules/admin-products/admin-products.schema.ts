@@ -50,6 +50,43 @@ export const updateProductSchema = z
   .partial()
   .refine((patch) => Object.keys(patch).length > 0, "Send at least one field to update");
 
+/** Enough for every plate weight or shirt size; more would be a separate product. */
+export const MAX_VARIANTS = 30;
+
+const variantSchema = z.strictObject({
+  /** Omitted for a new variant. */
+  id: z.uuid().optional(),
+  name: z.string().trim().min(1).max(60),
+  priceCents: productFields.priceCents,
+  stock: productFields.stock,
+  isActive: z.boolean().default(true),
+});
+
+/**
+ * PUT /admin/products/:id/variants: the product's full list of variants, in display order.
+ * Variants missing from the list are deleted; an empty list makes it a plain product again.
+ */
+export const saveVariantsSchema = z.strictObject({
+  variants: z
+    .array(variantSchema)
+    .max(MAX_VARIANTS, `At most ${MAX_VARIANTS} variants per product`)
+    .superRefine((variants, ctx) => {
+      const names = new Set<string>();
+      const ids = new Set<string>();
+      variants.forEach((variant, index) => {
+        const name = variant.name.toLowerCase();
+        if (names.has(name)) {
+          ctx.addIssue({ code: "custom", path: [index, "name"], message: `"${variant.name}" is listed twice` });
+        }
+        if (variant.id && ids.has(variant.id)) {
+          ctx.addIssue({ code: "custom", path: [index, "id"], message: "The same variant is listed twice" });
+        }
+        names.add(name);
+        if (variant.id) ids.add(variant.id);
+      });
+    }),
+});
+
 export const adminProductListQuerySchema = paginationQuerySchema.extend({
   category: slugSchema.optional(),
   brand: repeatedQueryParam(slugSchema),
@@ -61,3 +98,4 @@ export const adminProductListQuerySchema = paginationQuerySchema.extend({
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 export type AdminProductListQuery = z.infer<typeof adminProductListQuerySchema>;
+export type SaveVariantsInput = z.infer<typeof saveVariantsSchema>;

@@ -164,6 +164,10 @@ The `/admin` routes accept only a signed-in Supabase user whose `app_metadata.ro
    where email = 'you@example.com';
    ```
 
+The same SQL promotes an account that was created on the shop's sign-up page. Admins sign
+in on the shop's normal sign-in page and get an **Admin dashboard** link; after granting or
+removing the role, sign out and in again so the shop's menu picks up the change.
+
 The role is checked on every request, so removing it takes effect immediately. Shoppers sign
 up through the same Supabase Auth but never get the role, so they can't reach `/admin`.
 

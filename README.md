@@ -20,6 +20,12 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 ```
 .
 ├── render.yaml                      # Render Blueprint
+├── vitest.config.ts                 # test runner + the fake env the tests run with
+├── .github/workflows/ci.yml         # typecheck, tests and build on every push and PR
+├── test/
+│   ├── helpers.ts                   # supertest app, fake Supabase sessions
+│   ├── unit/                        # schemas, utils, services, dashboard, email template
+│   └── http/                        # requests through the whole Express app
 ├── supabase/
 │   ├── migrations/
 │   │   ├── 0001_initial_schema.sql        # tables, indexes, view, triggers, RLS
@@ -105,7 +111,9 @@ npm run dev            # http://localhost:4000, restarts on file changes
 | `npm run dev`       | Runs `src/server.ts` with tsx in watch mode    |
 | `npm run build`     | Compiles to `dist/`                            |
 | `npm start`         | Runs the compiled server                       |
-| `npm run typecheck` | Type-checks without emitting                   |
+| `npm run typecheck` | Type-checks `src/` and `test/` without emitting |
+| `npm test`          | Runs the test suite once (Vitest)              |
+| `npm run test:watch`| Re-runs affected tests on every save           |
 
 `.env` is loaded automatically when present (Node's `--env-file-if-exists`). If a variable
 is missing or malformed, the server exits at startup with a list of what's wrong.
@@ -434,6 +442,30 @@ Category shape (matches the frontend's `Category` type):
 The health endpoint returns 200 even when the database is unreachable (`status: "degraded"`),
 so Render doesn't restart a healthy instance during a Supabase outage.
 
+## Tests
+
+```bash
+npm test
+```
+
+The suite runs in a few seconds and needs no `.env`, database or network: `vitest.config.ts`
+sets placeholder environment variables, and each test replaces the repositories (and, for
+checkout, the Stripe gateway) with fakes through `vi.spyOn`. What it covers:
+
+- **Unit** (`test/unit/`): request schemas (a cart can't carry its own price, review ratings),
+  slugs, pagination, database error mapping, Stripe address parsing, review author names and
+  the "verified purchase" rule, dashboard grouping by day/week/month, and HTML escaping in the
+  order email.
+- **HTTP** (`test/http/`): real requests through `createApp()` with supertest: the error
+  format, validation details, CORS and security headers, health checks, sign-in and admin
+  checks on every protected route, a shopper's orders and wishlist, reviews, checkout
+  (guest, signed in, Stripe failing), and Stripe webhooks signed with the test secret, including
+  forged and tampered ones.
+
+Protected routes are tested with `fakeSessions()` from `test/helpers.ts`, which makes
+Supabase Auth accept `shopper-token` and `admin-token`. GitHub Actions runs typecheck, tests
+and build on every push and pull request (`.github/workflows/ci.yml`).
+
 ## Adding a new module
 
 Each feature lives in `src/modules/<name>/` and is split by responsibility:
@@ -454,6 +486,7 @@ To add one (for example `products`):
    (or generate it with `npx supabase gen types typescript --linked`).
 2. Create the module files following `categories/`.
 3. Mount the router in `src/routes/index.ts`, e.g. `apiRouter.use("/products", productsRouter)`.
+4. Add tests: service rules in `test/unit/`, routes in `test/http/` (see `reviews.test.ts`).
 
 Routes that need the raw request body (the Stripe webhook) are mounted in `src/app.ts`
 **before** `express.json()`; there's a marked spot for it. For socket.io, `src/server.ts`

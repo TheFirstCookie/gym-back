@@ -1,4 +1,4 @@
-import { badRequest, conflict, type HttpError } from "./http-error.js";
+import { badRequest, conflict, HttpError } from "./http-error.js";
 
 // Postgres error codes (https://www.postgresql.org/docs/current/errcodes-appendix.html)
 // that mean "the client sent bad data" rather than "the server broke".
@@ -16,6 +16,8 @@ export function toClientError(error: unknown, messages: { unique?: string; forei
   const code = (error as DbError | null)?.code;
 
   switch (code) {
+    case "FF008": return new HttpError(409, "stale_product", "Product or stock changed. Reload before saving.");
+    case "FF006": return new HttpError(409, "inventory_in_use", (error as { message?: string }).message ?? "Hide ordered variants instead of removing them");
     case UNIQUE_VIOLATION:
       return conflict(messages.unique);
     case FOREIGN_KEY_VIOLATION:

@@ -15,7 +15,16 @@ export const createCheckoutSchema = z.strictObject({
       }),
     )
     .min(1, "The cart is empty")
-    .max(MAX_CART_LINES, `At most ${MAX_CART_LINES} different products per order`),
+    .max(MAX_CART_LINES, `At most ${MAX_CART_LINES} different products per order`)
+    .superRefine((items, ctx) => {
+      const totals = new Map<string, number>();
+      items.forEach((item, index) => {
+        const key = `${item.slug}:${item.variant ?? ""}`;
+        const quantity = (totals.get(key) ?? 0) + item.quantity;
+        totals.set(key, quantity);
+        if (quantity > MAX_LINE_QUANTITY) ctx.addIssue({ code: "custom", path: [index, "quantity"], message: `At most ${MAX_LINE_QUANTITY} units per item, including duplicate lines` });
+      });
+    }),
 });
 
 export const checkoutSessionParamsSchema = z.object({

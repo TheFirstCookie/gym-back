@@ -14,6 +14,8 @@ const originList = z
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
+  ADMIN_REQUIRE_MFA: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional(),
   SUPABASE_URL: z.url(),

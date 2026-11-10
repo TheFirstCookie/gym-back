@@ -31,42 +31,21 @@ describe("displayName", () => {
 });
 
 describe("reviewsService.upsert", () => {
-  function fakeRepository({ existing, purchased }: { existing: Review | null; purchased: boolean }) {
+  function fakeRepository(purchased: boolean) {
     vi.spyOn(reviewsRepository, "productIdBySlug").mockResolvedValue(PRODUCT_ID);
     vi.spyOn(reviewsRepository, "hasPurchased").mockResolvedValue(purchased);
-    vi.spyOn(reviewsRepository, "findByAuthor").mockResolvedValueOnce(existing).mockResolvedValue(saved);
-    return {
-      insert: vi.spyOn(reviewsRepository, "insert").mockResolvedValue(),
-      update: vi.spyOn(reviewsRepository, "update").mockResolvedValue(),
-    };
+    return vi.spyOn(reviewsRepository, "upsert").mockResolvedValue(saved);
   }
-
-  it("creates a review with the author name and purchase badge worked out on the server", async () => {
-    const { insert, update } = fakeRepository({ existing: null, purchased: true });
-
-    await reviewsService.upsert("competition-kettlebell", shopper, { rating: 4, title: null, body: "" });
-
-    expect(update).not.toHaveBeenCalled();
-    expect(insert).toHaveBeenCalledWith({
-      product_id: PRODUCT_ID,
-      user_id: "user-1",
-      author_name: "Ana B.",
-      rating: 4,
-      title: null,
-      body: "",
-      verified_purchase: true,
-    });
+  it("atomically saves server-derived author and purchase fields", async () => {
+    const upsert = fakeRepository(true);
+    expect(await reviewsService.upsert("competition-kettlebell", shopper, { rating: 4, title: null, body: "" })).toBe(saved);
+    expect(upsert).toHaveBeenCalledWith({ product_id: PRODUCT_ID, user_id: shopper.id, author_name: "Ana B.", rating: 4, title: null, body: "", verified_purchase: true });
   });
-
-  it("replaces the shopper's earlier review instead of adding a second one", async () => {
-    const { insert, update } = fakeRepository({ existing: saved, purchased: false });
-
+  it("recomputes purchase verification when replacing a review", async () => {
+    const upsert = fakeRepository(false);
     await reviewsService.upsert("competition-kettlebell", shopper, { rating: 2, title: "Changed my mind", body: "" });
-
-    expect(insert).not.toHaveBeenCalled();
-    expect(update).toHaveBeenCalledWith(PRODUCT_ID, "user-1", expect.objectContaining({ rating: 2, verified_purchase: false }));
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ product_id: PRODUCT_ID, user_id: shopper.id, rating: 2, verified_purchase: false }));
   });
-
   it("answers 404 for a product that isn't in the shop", async () => {
     vi.spyOn(reviewsRepository, "productIdBySlug").mockResolvedValue(null);
     await expect(reviewsService.upsert("gone", shopper, { rating: 5, title: null, body: "" })).rejects.toMatchObject({

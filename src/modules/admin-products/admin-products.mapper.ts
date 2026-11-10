@@ -31,7 +31,7 @@ const COLUMN_BY_FIELD = {
   specs: "specs",
   sortOrder: "sort_order",
   isActive: "is_active",
-} as const satisfies Record<keyof UpdateProductInput, keyof ProductUpdateRow>;
+} as const satisfies Record<keyof Omit<UpdateProductInput, "variants" | "expectedUpdatedAt">, keyof ProductUpdateRow>;
 
 /** Converts only the fields that were sent, so a PATCH never overwrites the rest. */
 export function toUpdateRow(patch: UpdateProductInput): ProductUpdateRow {

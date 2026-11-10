@@ -35,6 +35,12 @@ type ProductListingRow = {
 export type Database = {
   public: {
     Tables: {
+      order_email_jobs: {
+        Row: { order_id: string; attempts: number; next_attempt_at: string; claimed_at: string | null; claim_token: string | null; sent_at: string | null };
+        Insert: { order_id: string; attempts?: number; next_attempt_at?: string };
+        Update: { claimed_at?: string | null; claim_token?: string | null; sent_at?: string | null };
+        Relationships: [];
+      };
       categories: {
         Row: {
           id: string;
@@ -178,6 +184,14 @@ export type Database = {
           fulfilled_at: string | null;
           refunded_at: string | null;
           stripe_refund_id: string | null;
+          last_reconciled_at: string | null;
+          checkout_images: string[];
+          checkout_started_at: string | null;
+          payment_exception: string | null;
+          refund_status: string | null;
+          refund_restock: boolean;
+          refund_attempt: string | null;
+          pre_refund_status: OrderStatus | null;
           restocked_at: string | null;
           confirmation_email_sent_at: string | null;
           user_id: string | null;
@@ -200,6 +214,14 @@ export type Database = {
           fulfilled_at?: string | null;
           refunded_at?: string | null;
           stripe_refund_id?: string | null;
+          last_reconciled_at?: string | null;
+          checkout_images?: string[];
+          checkout_started_at?: string | null;
+          payment_exception?: string | null;
+          refund_status?: string | null;
+          refund_restock?: boolean;
+          refund_attempt?: string | null;
+          pre_refund_status?: OrderStatus | null;
           restocked_at?: string | null;
           confirmation_email_sent_at?: string | null;
           user_id?: string | null;
@@ -222,6 +244,14 @@ export type Database = {
           fulfilled_at?: string | null;
           refunded_at?: string | null;
           stripe_refund_id?: string | null;
+          last_reconciled_at?: string | null;
+          checkout_images?: string[];
+          checkout_started_at?: string | null;
+          payment_exception?: string | null;
+          refund_status?: string | null;
+          refund_restock?: boolean;
+          refund_attempt?: string | null;
+          pre_refund_status?: OrderStatus | null;
           restocked_at?: string | null;
           confirmation_email_sent_at?: string | null;
           user_id?: string | null;
@@ -372,6 +402,11 @@ export type Database = {
       };
     };
     Functions: {
+      admin_write_product: { Args: { p_id: string | null; p_patch: Json; p_variants?: Json | null; p_expected_updated_at?: string | null }; Returns: string | null };
+      begin_order_refund: { Args: { p_order_id: string; p_restock: boolean }; Returns: string | null };
+      record_order_refund: { Args: { p_order_id: string; p_refund_id: string; p_status: string; p_attempt?: string | null }; Returns: OrderStatus | null };
+      claim_order_email: { Args: { p_order_id: string }; Returns: string | null };
+      finish_order_email: { Args: { p_order_id: string; p_token: string; p_success: boolean }; Returns: undefined };
       product_search_query: {
         Args: { p_query: string };
         Returns: string | null;

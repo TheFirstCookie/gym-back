@@ -9,6 +9,9 @@ import type {
 import { reviewsService } from "./reviews.service.js";
 
 export const reviewsController = {
+  async summary(req: Request<ReviewProductParams>, res: Response) {
+    res.json({ data: await reviewsService.summary(req.params.slug) });
+  },
   async list(req: Request<ReviewProductParams>, res: Response) {
     res.json(await reviewsService.list(req.params.slug, req.query as unknown as ReviewListQuery));
   },

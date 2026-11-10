@@ -102,7 +102,7 @@ no `asyncHandler` wrapper and no try/catch boilerplate in controllers.
 
 ## Local setup
 
-Requires Node 22.9 or newer (`nvm use` reads `.nvmrc`).
+Requires Node 22.12 or newer (`nvm use` reads `.nvmrc`).
 
 ```bash
 npm install
@@ -141,7 +141,7 @@ is missing or malformed, the server exits at startup with a list of what's wrong
 1. Create a project at [supabase.com](https://supabase.com) (the free plan is enough).
 2. Apply the schema and seed data, using either option:
    - **SQL Editor** (simplest): paste and run each file in `supabase/migrations/` in order
-     (`0001` to `0010`), then `supabase/seed.sql`.
+     (`0001` to `0011`), then `supabase/seed.sql`.
    - **Supabase CLI**: run `npx supabase init` once (it creates `supabase/config.toml` and
      keeps the existing files), then `npx supabase link --project-ref <ref>` and
      `npx supabase db push --include-seed`.
@@ -579,3 +579,8 @@ To add one (for example `products`):
 Routes that need the raw request body (the Stripe webhook) are mounted in `src/app.ts`
 **before** `express.json()`; there's a marked spot for it. For socket.io, `src/server.ts`
 already creates an explicit `http.Server` that it can attach to.
+
+
+## Integrity and security update
+
+Apply migration 0011 before deploying this API and the matching frontend. See [DEPLOYMENT.md](DEPLOYMENT.md) for deployment order, refund webhooks, admin MFA, stock-edit version tokens, durable jobs, image cleanup, and smoke checks. Referenced variants must be hidden instead of deleted.

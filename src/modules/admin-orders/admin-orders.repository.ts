@@ -18,7 +18,7 @@ export type OrderWithItems = OrderRow & {
 const ORDER_DETAIL_COLUMNS = `id, status, customer_email, customer_name, currency, subtotal_cents, total_cents,
   shipping_address, stripe_checkout_session_id, stripe_payment_intent_id, stripe_refund_id,
   created_at, updated_at, paid_at, fulfilled_at, cancelled_at, refunded_at, restocked_at,
-  confirmation_email_sent_at,
+  confirmation_email_sent_at, payment_exception, refund_status,
   order_items (id, product_id, product_name, variant_name, unit_price_cents, quantity, line_total_cents)`;
 
 export const adminOrdersRepository = {
@@ -33,7 +33,11 @@ export const adminOrdersRepository = {
       .throwOnError();
 
     // Every row carries the total; a page past the end has no rows, and so no total.
-    return { rows: data, total: data[0]?.total_count ?? 0 };
+    let total = data[0]?.total_count ?? 0;
+    if (data.length === 0 && search.offset > 0) {
+      total = (await adminOrdersRepository.search({ ...search, offset: 0, limit: 1 })).total;
+    }
+    return { rows: data, total };
   },
 
   async statusCounts(): Promise<{ status: OrderStatus; count: number }[]> {
@@ -67,6 +71,8 @@ export const adminOrdersRepository = {
       .update({ status: to, ...changes })
       .eq("id", id)
       .in("status", from)
+      .or("refund_status.is.null,refund_status.in.(failed,canceled)")
+      .is("payment_exception", null)
       .select("id")
       .maybeSingle()
       .throwOnError();

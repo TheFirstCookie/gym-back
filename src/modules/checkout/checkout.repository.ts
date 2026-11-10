@@ -63,7 +63,9 @@ function toCheckoutError(error: unknown): HttpError | null {
     case "FF003":
       return badRequest("Products in one order must share a currency");
     case "FF004":
-      return badRequest("The cart is empty");
+      return badRequest("Use 1 to 20 cart lines with at most 99 units per item");
+    case "FF007":
+      return badRequest("The order total exceeds the payment limit");
     default:
       return null;
   }
@@ -93,6 +95,41 @@ const ORDER_SUMMARY_COLUMNS = `id, status, currency, subtotal_cents, total_cents
   order_items (product_id, product_name, variant_name, unit_price_cents, quantity, line_total_cents)`;
 
 export const checkoutRepository = {
+  async startAttempt(orderId: string, userId: string | null): Promise<void> {
+    await supabase.from("orders").update({ checkout_started_at: new Date().toISOString(), user_id: userId })
+      .eq("id", orderId).eq("status", "pending").throwOnError();
+  },
+  async recordException(orderId: string, message: string): Promise<void> {
+    await supabase.from("orders").update({ payment_exception: message }).eq("id", orderId).throwOnError();
+  },
+  async staleLinkedOrders() {
+    const { data } = await supabase.from("orders").select("id, stripe_checkout_session_id, checkout_started_at, created_at, user_id")
+      .eq("status", "pending").lt("created_at", new Date(Date.now() - 2 * 60 * 60_000).toISOString())
+      .order("last_reconciled_at", { nullsFirst: true }).order("id").limit(20).throwOnError();
+    return data;
+  },
+  async checked(orderId: string): Promise<void> {
+    await supabase.from("orders").update({ last_reconciled_at: new Date().toISOString() }).eq("id", orderId).throwOnError();
+  },
+  async beginRefund(orderId: string, restock: boolean): Promise<string> {
+    const { data } = await supabase.rpc("begin_order_refund", { p_order_id: orderId, p_restock: restock }).throwOnError();
+    if (!data) throw new HttpError(409, "invalid_status_transition", "This order cannot be refunded");
+    return data;
+  },
+  async recordRefund(orderId: string, refundId: string, status: string, attempt?: string): Promise<void> {
+    await supabase.rpc("record_order_refund", { p_order_id: orderId, p_refund_id: refundId, p_status: status, p_attempt: attempt ?? null }).throwOnError();
+  },
+  async pendingRefunds() {
+    const { data } = await supabase.from("orders").select("id, stripe_refund_id, stripe_payment_intent_id, refund_attempt")
+      .not("refund_attempt", "is", null).in("refund_status", ["pending", "requires_action"])
+      .order("last_reconciled_at", { nullsFirst: true }).order("id").limit(20).throwOnError();
+    return data;
+  },
+  async refundOrderDetails(paymentIntentId: string) {
+    const { data } = await supabase.from("orders").select("id,total_cents")
+      .eq("stripe_payment_intent_id", paymentIntentId).maybeSingle().throwOnError();
+    return data;
+  },
   /** Validates the cart, reserves stock and snapshots prices, atomically. */
   async createPendingOrder(items: CartItem[]): Promise<PendingOrder> {
     try {
@@ -103,11 +140,11 @@ export const checkoutRepository = {
     }
   },
 
-  /** Links the order to its Stripe session and, for a signed-in shopper, to their account. */
+  /** Links the verified session without replacing the user recorded before the Stripe request. */
   async attachSession(orderId: string, sessionId: string, userId: string | null): Promise<void> {
     await supabase
       .from("orders")
-      .update({ stripe_checkout_session_id: sessionId, user_id: userId })
+      .update({ stripe_checkout_session_id: sessionId, ...(userId ? { user_id: userId } : {}) })
       .eq("id", orderId)
       .throwOnError();
   },
@@ -134,31 +171,10 @@ export const checkoutRepository = {
     return data;
   },
 
-  /**
-   * Idempotent; returns the status the order ended up in ('refunded', or whatever it was
-   * if it couldn't be refunded), or null when it doesn't exist.
-   */
-  async markRefunded(orderId: string, refundId: string | null): Promise<OrderStatus | null> {
-    const { data } = await supabase
-      .rpc("mark_order_refunded", { p_order_id: orderId, p_refund_id: refundId })
-      .throwOnError();
-    return data;
-  },
-
   /** Puts a refunded order's items back in stock; true only for the call that did it. */
   async restockRefunded(orderId: string): Promise<boolean> {
     const { data } = await supabase.rpc("restock_refunded_order", { p_order_id: orderId }).throwOnError();
     return data;
-  },
-
-  async findOrderIdByPaymentIntent(paymentIntentId: string): Promise<string | null> {
-    const { data } = await supabase
-      .from("orders")
-      .select("id")
-      .eq("stripe_payment_intent_id", paymentIntentId)
-      .maybeSingle()
-      .throwOnError();
-    return data?.id ?? null;
   },
 
   async releaseStaleOrders(): Promise<number> {

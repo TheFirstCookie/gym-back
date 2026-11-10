@@ -15,6 +15,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=moderate
       - run: npm run typecheck
       # Tests use fake Supabase and Stripe clients (see vitest.config.ts): no secrets needed.
       - run: npm test

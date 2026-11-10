@@ -50,12 +50,13 @@ export const adminProductsService = {
     const slug = input.slug ?? slugify(input.name);
     if (!slug) throw badRequest("Add a slug, or a name with letters or numbers to build one from");
 
-    const id = await adminProductsRepository.insert(toInsertRow({ ...input, slug }));
+    const id = await adminProductsRepository.write(null, toInsertRow({ ...input, slug }), input.variants);
+    if (!id) throw notFound("Product not found");
     return adminProductsService.getById(id);
   },
 
   async update(id: string, patch: UpdateProductInput): Promise<AdminProduct> {
-    const found = await adminProductsRepository.update(id, toUpdateRow(patch));
+    const found = await adminProductsRepository.write(id, toUpdateRow(patch), patch.variants, patch.expectedUpdatedAt);
     if (!found) throw notFound("Product not found");
     return adminProductsService.getById(id);
   },
@@ -67,7 +68,7 @@ export const adminProductsService = {
   async saveVariants(id: string, input: SaveVariantsInput): Promise<AdminProduct> {
     // A clear 404 rather than a foreign-key error for a missing product.
     await adminProductsService.getById(id);
-    await variantsRepository.save(id, input.variants);
+    await adminProductsRepository.write(id, {}, input.variants, input.expectedUpdatedAt);
     return adminProductsService.getById(id);
   },
 

@@ -19,6 +19,7 @@ checkoutRouter.post(
 
 checkoutRouter.get(
   "/sessions/:sessionId",
+  rateLimit({ windowMs: 60_000, limit: 40 }),
   validate({ params: checkoutSessionParamsSchema }),
   checkoutController.getOrder,
 );
@@ -26,6 +27,7 @@ checkoutRouter.get(
 // Called by the cart when Stripe's "back" link returns an unpaid shopper.
 checkoutRouter.post(
   "/sessions/:sessionId/abandon",
+  rateLimit({ windowMs: 60_000, limit: 10 }),
   validate({ params: checkoutSessionParamsSchema }),
   checkoutController.abandon,
 );

@@ -31,25 +31,6 @@ const productFields = {
   isActive: z.boolean(),
 };
 
-export const createProductSchema = z.strictObject({
-  ...productFields,
-  // Derived from the name when omitted.
-  slug: productFields.slug.optional(),
-  currency: productFields.currency.default("usd"),
-  stock: productFields.stock.default(0),
-  tag: productFields.tag.default(null),
-  imageUrl: productFields.imageUrl.default(null),
-  description: productFields.description.default(""),
-  specs: productFields.specs.default([]),
-  sortOrder: productFields.sortOrder.default(0),
-  isActive: productFields.isActive.default(true),
-});
-
-export const updateProductSchema = z
-  .strictObject(productFields)
-  .partial()
-  .refine((patch) => Object.keys(patch).length > 0, "Send at least one field to update");
-
 /** Enough for every plate weight or shirt size; more would be a separate product. */
 export const MAX_VARIANTS = 30;
 
@@ -67,6 +48,7 @@ const variantSchema = z.strictObject({
  * Variants missing from the list are deleted; an empty list makes it a plain product again.
  */
 export const saveVariantsSchema = z.strictObject({
+  expectedUpdatedAt: z.iso.datetime({ offset: true }).optional(),
   variants: z
     .array(variantSchema)
     .max(MAX_VARIANTS, `At most ${MAX_VARIANTS} variants per product`)
@@ -86,6 +68,27 @@ export const saveVariantsSchema = z.strictObject({
       });
     }),
 });
+
+export const createProductSchema = z.strictObject({
+  ...productFields,
+  variants: saveVariantsSchema.shape.variants.optional(),
+  // Derived from the name when omitted.
+  slug: productFields.slug.optional(),
+  currency: productFields.currency.default("usd"),
+  stock: productFields.stock.default(0),
+  tag: productFields.tag.default(null),
+  imageUrl: productFields.imageUrl.default(null),
+  description: productFields.description.default(""),
+  specs: productFields.specs.default([]),
+  sortOrder: productFields.sortOrder.default(0),
+  isActive: productFields.isActive.default(true),
+});
+
+export const updateProductSchema = z
+  .strictObject({ ...productFields, variants: saveVariantsSchema.shape.variants.optional(), expectedUpdatedAt: z.iso.datetime({ offset: true }).optional() })
+  .partial()
+  .refine((patch) => Object.keys(patch).length > 0, "Send at least one field to update");
+
 
 export const adminProductListQuerySchema = paginationQuerySchema.extend({
   category: slugSchema.optional(),

@@ -21,6 +21,9 @@ async function requireProductId(slug: string): Promise<string> {
 }
 
 export const reviewsService = {
+  async summary(slug: string): Promise<RatingSummary> {
+    return reviewsRepository.summary(await requireProductId(slug));
+  },
   async list(
     slug: string,
     query: ReviewListQuery,
@@ -34,10 +37,6 @@ export const reviewsService = {
     return { data: reviews, meta: { pagination: toPagination(query, summary.count), summary } };
   },
 
-  async summary(slug: string): Promise<RatingSummary> {
-    return reviewsRepository.summary(await requireProductId(slug));
-  },
-
   async mine(slug: string, user: CustomerUser): Promise<Review | null> {
     return reviewsRepository.findByAuthor(await requireProductId(slug), user.id);
   },
@@ -48,10 +47,7 @@ export const reviewsService = {
    */
   async upsert(slug: string, user: CustomerUser, input: UpsertReviewInput): Promise<Review> {
     const productId = await requireProductId(slug);
-    const [existing, verified] = await Promise.all([
-      reviewsRepository.findByAuthor(productId, user.id),
-      reviewsRepository.hasPurchased(user.id, productId),
-    ]);
+    const verified = await reviewsRepository.hasPurchased(user.id, productId);
 
     const fields = {
       author_name: displayName(user.fullName),
@@ -61,13 +57,7 @@ export const reviewsService = {
       verified_purchase: verified,
     };
 
-    if (existing) {
-      await reviewsRepository.update(productId, user.id, fields);
-    } else {
-      await reviewsRepository.insert({ ...fields, product_id: productId, user_id: user.id });
-    }
-
-    return (await reviewsRepository.findByAuthor(productId, user.id))!;
+    return reviewsRepository.upsert({ ...fields, product_id: productId, user_id: user.id });
   },
 
   async remove(slug: string, user: CustomerUser): Promise<void> {

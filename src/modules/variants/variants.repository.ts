@@ -1,5 +1,4 @@
 import { supabase } from "../../lib/supabase.js";
-import { withClientErrors } from "../../utils/db-errors.js";
 import type { VariantRow } from "./variants.types.js";
 
 const VARIANT_COLUMNS = "id, product_id, name, price_cents, stock, is_active";
@@ -38,25 +37,4 @@ export const variantsRepository = {
     return byProduct;
   },
 
-  /**
-   * Replaces a product's variants with this list, in this order, in one transaction
-   * (admin_save_variants, migration 0010). The product's price and stock follow.
-   */
-  async save(productId: string, variants: VariantWrite[]): Promise<void> {
-    const payload = variants.map((variant) => ({
-      ...(variant.id ? { id: variant.id } : {}),
-      name: variant.name,
-      price_cents: variant.priceCents,
-      stock: variant.stock,
-      is_active: variant.isActive,
-    }));
-
-    await withClientErrors(
-      supabase.rpc("admin_save_variants", { p_product_id: productId, p_variants: payload }).throwOnError(),
-      {
-        unique: "Two variants of this product can't have the same name",
-        foreignKey: "Product not found",
-      },
-    );
-  },
 };

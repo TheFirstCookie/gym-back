@@ -9,16 +9,22 @@ const threshold = LEVELS[env.LOG_LEVEL ?? (env.isProduction ? "info" : "debug")]
 
 // Error properties are non-enumerable, so JSON.stringify would log them as {}.
 function serialize(value: unknown): unknown {
-  if (!(value instanceof Error)) return value;
+  if (typeof value === "string") return value.replace(/cs_(?:test|live)_[A-Za-z0-9]+/g, "[checkout]");
+  if (Array.isArray(value)) return value.map(serialize);
+  if (!(value instanceof Error)) {
+    return value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, serialize(entry)])) : value;
+  }
   return {
     name: value.name,
-    message: value.message,
-    stack: value.stack,
+    message: serialize(value.message),
+    stack: serialize(value.stack),
     ...(value.cause !== undefined && { cause: serialize(value.cause) }),
   };
 }
 
 function write(level: Level, message: string, context: Context = {}) {
+  message = String(serialize(message));
   if (LEVELS[level] < threshold) return;
 
   const fields = Object.fromEntries(Object.entries(context).map(([key, value]) => [key, serialize(value)]));

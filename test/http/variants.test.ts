@@ -92,7 +92,7 @@ describe("PUT /admin/products/:id/variants", () => {
   };
 
   it("is for admins only", async () => {
-    const save = vi.spyOn(variantsRepository, "save");
+    const save = vi.spyOn(adminProductsRepository, "write");
 
     expect((await api().put(url).send(body)).status).toBe(401);
     expect((await api().put(url).set(bearer("shopper-token")).send(body)).status).toBe(403);
@@ -102,22 +102,22 @@ describe("PUT /admin/products/:id/variants", () => {
   it("saves the list in order and returns the updated product", async () => {
     vi.spyOn(adminProductsRepository, "findById").mockResolvedValue(plateRow);
     vi.spyOn(variantsRepository, "listByProduct").mockResolvedValue(new Map([[PLATE_ID, plateVariants]]));
-    const save = vi.spyOn(variantsRepository, "save").mockResolvedValue();
+    const save = vi.spyOn(adminProductsRepository, "write").mockResolvedValue(PLATE_ID);
 
     const res = await api().put(url).set(bearer("admin-token")).send(body);
 
     expect(res.status).toBe(200);
-    expect(save).toHaveBeenCalledWith(PLATE_ID, [
+    expect(save).toHaveBeenCalledWith(PLATE_ID, {}, [
       { id: SMALL_ID, name: "10 kg", priceCents: 4900, stock: 5, isActive: true },
       { name: "15 kg", priceCents: 6900, stock: 4, isActive: false },
-    ]);
+    ], undefined);
     // The admin sees hidden variants too.
     expect(res.body.data.variants).toHaveLength(3);
     expect(res.body.data.variants[2]).toEqual({ id: HIDDEN_ID, name: "25 kg", priceCents: 10900, stock: 0, isActive: false });
   });
 
   it("rejects two variants with the same name", async () => {
-    const save = vi.spyOn(variantsRepository, "save");
+    const save = vi.spyOn(adminProductsRepository, "write");
 
     const res = await api()
       .put(url)
@@ -131,7 +131,7 @@ describe("PUT /admin/products/:id/variants", () => {
 
   it("answers 404 for a product that doesn't exist", async () => {
     vi.spyOn(adminProductsRepository, "findById").mockResolvedValue(null);
-    const save = vi.spyOn(variantsRepository, "save");
+    const save = vi.spyOn(adminProductsRepository, "write");
 
     const res = await api().put(url).set(bearer("admin-token")).send(body);
 

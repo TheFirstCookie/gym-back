@@ -31,6 +31,7 @@ const pendingOrder: PendingOrder = {
 function fakeCheckout() {
   vi.spyOn(checkoutRepository, "releaseStaleOrders").mockResolvedValue(0);
   const create = vi.spyOn(checkoutRepository, "createPendingOrder").mockResolvedValue(pendingOrder);
+  vi.spyOn(checkoutRepository, "startAttempt").mockResolvedValue();
   const attach = vi.spyOn(checkoutRepository, "attachSession").mockResolvedValue();
   const cancel = vi.spyOn(checkoutRepository, "cancelPending").mockResolvedValue(true);
   const session = vi
@@ -80,7 +81,7 @@ describe("POST /checkout/sessions", () => {
     expect(attach).toHaveBeenCalledWith(ORDER_ID, "cs_test_abc123", null);
   });
 
-  it("puts the stock back when Stripe fails", async () => {
+  it("retains stock when the Stripe request outcome is uncertain", async () => {
     const { cancel, session } = fakeCheckout();
     session.mockRejectedValue(new Error("Stripe is down"));
 
@@ -89,7 +90,7 @@ describe("POST /checkout/sessions", () => {
       .send({ items: [{ slug: "competition-kettlebell", quantity: 1 }] });
 
     expect(res.status).toBe(500);
-    expect(cancel).toHaveBeenCalledWith(ORDER_ID);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("rejects a cart that tries to set its own price", async () => {

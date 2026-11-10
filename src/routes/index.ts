@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "../middleware/rate-limit.js";
 import { requireAdmin } from "../middleware/require-admin.js";
 import { accountRouter } from "../modules/account/account.routes.js";
 import { adminBrandsRouter } from "../modules/admin-brands/admin-brands.routes.js";
@@ -31,6 +32,7 @@ adminRouter.use("/uploads", adminUploadsRouter);
 /** Every versioned API route; mounted at /api/v1 in app.ts. */
 export const apiRouter = Router();
 
+apiRouter.use(rateLimit({ windowMs: 60_000, limit: 180 }));
 apiRouter.use("/health", healthRouter);
 apiRouter.use("/categories", categoriesRouter);
 apiRouter.use("/brands", brandsRouter);

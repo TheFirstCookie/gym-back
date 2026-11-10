@@ -61,7 +61,7 @@ describe("PUT /products/:slug/reviews/mine", () => {
     vi.spyOn(reviewsRepository, "productIdBySlug").mockResolvedValue(PRODUCT_ID);
     vi.spyOn(reviewsRepository, "hasPurchased").mockResolvedValue(true);
     vi.spyOn(reviewsRepository, "findByAuthor").mockResolvedValueOnce(null).mockResolvedValue(review);
-    const insert = vi.spyOn(reviewsRepository, "insert").mockResolvedValue();
+    const insert = vi.spyOn(reviewsRepository, "upsert").mockResolvedValue(review);
 
     const res = await api()
       .put("/api/v1/products/competition-kettlebell/reviews/mine")

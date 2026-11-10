@@ -1,5 +1,6 @@
+import { env } from "../config/env.js";
 import type { RequestHandler } from "express";
-import { forbidden, unauthorized } from "../utils/http-error.js";
+import { forbidden, unauthorized, HttpError } from "../utils/http-error.js";
 import { readBearerToken, userFromToken } from "./auth-token.js";
 
 export type AdminUser = {
@@ -28,6 +29,12 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
     throw forbidden("This account doesn't have admin access");
   }
 
+  if (env.ADMIN_REQUIRE_MFA) {
+    // getUser above verifies the token before its assurance claim is inspected.
+    let assurance: string | undefined;
+    try { assurance = (JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as { aal?: string }).aal; } catch { /* fail closed */ }
+    if (assurance !== "aal2") throw new HttpError(403, "mfa_required", "Verify your authenticator code to access admin");
+  }
   res.locals.admin = { id: user.id, email: user.email ?? null };
   next();
 };

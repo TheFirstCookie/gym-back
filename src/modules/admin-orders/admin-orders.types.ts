@@ -45,6 +45,8 @@ export type AdminOrder = AdminOrderListItem & {
   /** When the order confirmation email went out (null: not sent, e.g. email isn't set up). */
   confirmationEmailSentAt: string | null;
   updatedAt: string;
+  paymentException: string | null;
+  refundStatus: string | null;
   stripe: {
     checkoutSessionId: string | null;
     paymentIntentId: string | null;

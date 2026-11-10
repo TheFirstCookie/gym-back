@@ -80,21 +80,10 @@ export const reviewsRepository = {
     return data;
   },
 
-  async insert(row: Database["public"]["Tables"]["product_reviews"]["Insert"]): Promise<void> {
-    await supabase.from("product_reviews").insert(row).throwOnError();
-  },
-
-  async update(
-    productId: string,
-    userId: string,
-    changes: Database["public"]["Tables"]["product_reviews"]["Update"],
-  ): Promise<void> {
-    await supabase
-      .from("product_reviews")
-      .update(changes)
-      .eq("product_id", productId)
-      .eq("user_id", userId)
-      .throwOnError();
+  async upsert(row: Database["public"]["Tables"]["product_reviews"]["Insert"]): Promise<Review> {
+    const { data } = await supabase.from("product_reviews")
+      .upsert(row, { onConflict: "product_id,user_id" }).select(REVIEW_COLUMNS).single().throwOnError();
+    return toReview(data);
   },
 
   async deleteByAuthor(productId: string, userId: string): Promise<void> {

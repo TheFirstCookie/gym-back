@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from "express";
+import { safeRequestPath } from "../utils/request-path.js";
 import { logger } from "../lib/logger.js";
 import { HttpError, internalError } from "../utils/http-error.js";
 
@@ -40,7 +41,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 
   // Unexpected failures are logged in full; the client only ever sees the generic message.
   if (httpError.status >= 500) {
-    logger.error("Unhandled error", { method: req.method, path: req.originalUrl, err });
+    logger.error("Unhandled error", { method: req.method, path: safeRequestPath(req.path), requestId: res.getHeader("X-Request-Id"), err });
   }
 
   res.status(httpError.status).json({

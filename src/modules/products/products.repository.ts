@@ -29,7 +29,11 @@ export const productsRepository = {
 
     const rows = data ?? [];
     // The count rides along on every row; an out-of-range page has no rows to carry it.
-    const total = rows[0]?.total_count ?? 0;
+    let total = rows[0]?.total_count ?? 0;
+    if (rows.length === 0 && filters.offset > 0) {
+      const first = await productsRepository.search({ ...filters, offset: 0, limit: 1 });
+      total = first.total;
+    }
     return { items: rows.map(({ total_count: _total, ...row }) => row), total };
   },
 

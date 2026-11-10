@@ -39,29 +39,18 @@ export const orderEmailsRepository = {
     };
   },
 
-  /**
-   * Marks the confirmation as sent, but only if nobody did yet. Returns true for the one
-   * caller that gets to send it, so a webhook retried by Stripe never emails twice.
-   */
-  async claimConfirmation(orderId: string): Promise<boolean> {
-    const { data } = await supabase
-      .from("orders")
-      .update({ confirmation_email_sent_at: new Date().toISOString() })
-      .eq("id", orderId)
-      .is("confirmation_email_sent_at", null)
-      .select("id")
-      .maybeSingle()
-      .throwOnError();
-
-    return data !== null;
+  async due(): Promise<string[]> {
+    const { data } = await supabase.from("order_email_jobs").select("order_id")
+      .is("sent_at", null).lte("next_attempt_at", new Date().toISOString())
+      .or(`claimed_at.is.null,claimed_at.lt.${new Date(Date.now() - 300_000).toISOString()}`)
+      .order("next_attempt_at").order("order_id").limit(20).throwOnError();
+    return data.map((row) => row.order_id);
   },
-
-  /** Undoes a claim after a failed send, so a later attempt can try again. */
-  async releaseConfirmation(orderId: string): Promise<void> {
-    await supabase
-      .from("orders")
-      .update({ confirmation_email_sent_at: null })
-      .eq("id", orderId)
-      .throwOnError();
+  async claimConfirmation(orderId: string): Promise<string | null> {
+    const { data } = await supabase.rpc("claim_order_email", { p_order_id: orderId }).throwOnError();
+    return data;
+  },
+  async finishConfirmation(orderId: string, token: string, success: boolean): Promise<void> {
+    await supabase.rpc("finish_order_email", { p_order_id: orderId, p_token: token, p_success: success }).throwOnError();
   },
 };

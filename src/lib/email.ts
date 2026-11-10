@@ -20,7 +20,7 @@ export const email = {
   },
 
   /** Sends one message and returns the provider's id. Throws when delivery is refused. */
-  async send(message: EmailMessage): Promise<{ id: string }> {
+  async send(message: EmailMessage, idempotencyKey?: string): Promise<{ id: string }> {
     if (!env.RESEND_API_KEY) throw new Error("Email isn't configured (RESEND_API_KEY is missing)");
 
     const response = await fetch(RESEND_URL, {
@@ -28,6 +28,7 @@ export const email = {
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from: env.EMAIL_FROM,

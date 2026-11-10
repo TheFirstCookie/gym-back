@@ -54,6 +54,9 @@ export const adminOrdersService = {
     });
 
     const order = await adminOrdersService.getById(id);
+    if (!moved && (order.refundStatus === "pending" || order.refundStatus === "requires_action" || order.paymentException)) {
+      throw new HttpError(409, "order_under_review", "Resolve the refund or payment exception before changing shipping status");
+    }
     if (!moved && order.status !== status) {
       throw new HttpError(
         409,

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
+import { startMaintenance } from "./lib/maintenance.js";
 import { logger } from "./lib/logger.js";
 
 // Render sends SIGTERM and waits up to 30s; exit well before it resorts to SIGKILL.
@@ -8,6 +9,7 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 // An explicit http.Server (rather than app.listen) so socket.io can share the port later.
 const server = createServer(createApp());
+const stopMaintenance = startMaintenance();
 
 server.on("error", (error) => {
   logger.error("HTTP server failed", { err: error });
@@ -19,6 +21,7 @@ server.listen(env.PORT, () => {
 });
 
 function shutdown(signal: NodeJS.Signals) {
+  stopMaintenance();
   logger.info(`${signal} received, closing HTTP server`);
 
   server.close((error) => {

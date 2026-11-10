@@ -38,6 +38,8 @@ export function toAdminOrder(row: OrderWithItems): AdminOrder {
     restockedAt: row.restocked_at,
     confirmationEmailSentAt: row.confirmation_email_sent_at,
     updatedAt: row.updated_at,
+    paymentException: row.payment_exception,
+    refundStatus: row.refund_status,
     stripe: {
       checkoutSessionId: row.stripe_checkout_session_id,
       paymentIntentId: row.stripe_payment_intent_id,

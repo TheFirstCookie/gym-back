@@ -46,7 +46,7 @@ export const productsService = {
 
   async listRelated(slug: string, limit: number): Promise<ProductSummary[]> {
     // 404 for unknown products instead of an empty list that hides a typo in the URL.
-    await productsService.getBySlug(slug);
+    if (!(await productsRepository.findActiveBySlug(slug))) throw notFound("Product not found");
     const rows = await productsRepository.findRelated(slug, limit);
     return toSummaries(rows);
   },

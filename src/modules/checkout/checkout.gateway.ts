@@ -114,16 +114,16 @@ export const checkoutGateway = {
    * Refunds a payment in full. Safe to call twice for the same order: the idempotency key
    * makes Stripe return the first refund, and "already refunded" comes back as null.
    */
-  async refundPayment(paymentIntentId: string, orderId: string): Promise<Stripe.Refund | null> {
+  async refundPayment(paymentIntentId: string, orderId: string, attempt = "legacy"): Promise<Stripe.Refund | null> {
     const client = requireStripe();
     try {
       return await client.refunds.create(
         {
           payment_intent: paymentIntentId,
           reason: "requested_by_customer",
-          metadata: { order_id: orderId },
+          metadata: { order_id: orderId, refund_attempt: attempt },
         },
-        { idempotencyKey: `refund-order-${orderId}` },
+        { idempotencyKey: `refund-order-${orderId}-${attempt}` },
       );
     } catch (error) {
       // Refunded earlier, e.g. straight from the Stripe dashboard.
@@ -132,6 +132,42 @@ export const checkoutGateway = {
       }
       throw toGatewayError(error);
     }
+  },
+
+  async sessionForPaymentIntent(paymentIntentId: string): Promise<Stripe.Checkout.Session | null> {
+    const result = await requireStripe().checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+    return result.data[0] ?? null;
+  },
+
+  async retrieveRefund(refundId: string): Promise<Stripe.Refund> {
+    try { return await requireStripe().refunds.retrieve(refundId); } catch (error) { throw toGatewayError(error); }
+  },
+
+  async fullRefundState(paymentIntentId: string, expectedAmount?: number): Promise<{ id: string; status: string } | null> {
+    const client = requireStripe();
+    const intent = await client.paymentIntents.retrieve(paymentIntentId);
+    const total = expectedAmount ?? intent.amount;
+    let sum = 0;
+    let last: Stripe.Refund | null = null;
+    for await (const refund of client.refunds.list({ payment_intent: paymentIntentId, limit: 100 })) {
+      if (refund.status === "succeeded") { sum += refund.amount; last ??= refund; }
+    }
+    return sum >= total && last ? { id: last.id, status: "succeeded" } : null;
+  },
+
+  async findSession(orderId: string, startedAt: string): Promise<Stripe.Checkout.Session | null> {
+    const client = requireStripe();
+    let cursor: string | undefined;
+    const started = Math.floor(new Date(startedAt).getTime() / 1000);
+    for (let page = 0; page < 20; page++) {
+      const result = await client.checkout.sessions.list({ limit: 100, starting_after: cursor,
+        created: { gte: started - 300, lte: started + 300 } });
+      const found = result.data.find((session) => session.client_reference_id === orderId);
+      if (found) return found;
+      if (!result.has_more) return null;
+      cursor = result.data.at(-1)?.id;
+    }
+    throw new Error("Session scan incomplete; reservation retained for manual reconciliation");
   },
 
   async retrieveSession(sessionId: string): Promise<Stripe.Checkout.Session> {

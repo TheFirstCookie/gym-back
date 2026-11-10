@@ -22,6 +22,8 @@ reviewsRouter.get(
   reviewsController.list,
 );
 
+reviewsRouter.get("/summary", params, reviewsController.summary);
+
 // The signed-in customer's own review of this product.
 reviewsRouter.get("/mine", requireUser, params, reviewsController.mine);
 reviewsRouter.put(
